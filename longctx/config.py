@@ -28,6 +28,8 @@ class Config:
     freetoken_min_vram_gib: float=4
     freetoken_memory_ratio: float=.8
     kv_cache_dtype: str="auto"
+    kv_tokens: int=0  # zero: native auto sizing
+    expert_slots: int=0  # zero: native auto sizing
     attention_layers: int=0
     kv_heads: int=0
     head_dim: int=0
@@ -42,9 +44,11 @@ class Config:
     def validate(self):
         for k in ("context","model_limit","logical_target","output_reserve","ubatch",
                   "threads","api_port","backend_port","gateway_port","timeout",
-                  "attention_layers","kv_heads","head_dim"):
+                  "attention_layers","kv_heads","head_dim","kv_tokens","expert_slots"):
             if type(getattr(self,k)) is not int:
                 raise ValueError(k+" must be an integer")
+        if not 0<=self.kv_tokens<=2097152 or not 0<=self.expert_slots<=1000000:
+            raise ValueError("invalid cache capacity")
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}",self.model_id):
             raise ValueError("invalid model ID")
         if not 0<self.output_reserve<self.context-256 or not self.context<=self.model_limit<=2097152:

@@ -5,15 +5,20 @@ import time
 from .backend import Backend,BackendError,clean_env,require_free
 
 def command(c,d):
-    return [str(c.freetoken_server),"serve","--model",str(c.model),
+    args = [str(c.freetoken_server),"serve","--model",str(c.model),
             "--served-model-name",c.model_id,"--host","127.0.0.1",
             "--port",str(c.backend_port),"--gpu",d.gpu_uuid,
             "--max-running-requests","1","--max-output-tokens",str(c.output_reserve),
             "--max-seq-len-override",str(c.context),"--max-prefill-length",str(d.prefill_chunk),
             "--memory-ratio",str(d.memory_ratio),"--moe-strategy","auto","--cache-type","radix",
             "--kv-cache-dtype",c.kv_cache_dtype,
-            "--moe-cpu-threads",str(d.threads),"--kv-reserve-tokens",str(c.context),
+            "--moe-cpu-threads",str(d.threads),"--kv-reserve-tokens",str(min(c.context,c.kv_tokens or 8192)),
             "--enable-cache-report","--enable-timings-report"]
+    if c.kv_tokens:
+        args += ["--num-tokens",str(c.kv_tokens)]
+    if c.expert_slots:
+        args += ["--moe-cache-size",str(c.expert_slots)]
+    return args
 
 class FreeTokenBackend(Backend):
     def __init__(self,c,decision):

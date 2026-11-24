@@ -37,3 +37,7 @@ OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --open
 ## V5.1 Native tools / ACE / ACMA
 
 新增本地 Anthropic Messages 原生工具传输预览、Harness 压缩边界 ACE 只读接入及 CPU 分块注意力参考。当前不宣称工具执行、自动压缩或 GPU 加速已验证；详见 [技术接口与边界](docs/architecture/harness-native-ace.md) 和 [研发记录](docs/routine/2026-11-24-native-tools-ace-attention.md)。
+
+## V5.2 Cache workbench
+
+新增 [缓存参数工作台与研究验收说明](docs/architecture/cache-workbench.md)，支持原生缓存几何读取、实验性空闲调整及启动配置；新增真实协议 smoke、桌面构建入口、分块 GPU 张量计算、混合 KV 量化和 RAM/SSD 存储研究。未经过实机测试，自动 ACE、融合内核与原生三级迁移仍待完成。见 [研发记录](docs/routine/2026-11-24-cache-workbench.md)。

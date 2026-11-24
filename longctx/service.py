@@ -83,6 +83,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/local/desktop/capabilities":
             from .desktop_contract import describe
             self.reply(200, describe(c))
+        elif self.path == "/local/cache/status":
+            from .cache_control import snapshot
+            try:
+                self.reply(200,snapshot(self.server.backend,c))
+            except (OSError,ValueError,KeyError,TypeError,BackendError,http.client.HTTPException):
+                self.error_json(503,"native cache telemetry unavailable")
         elif self.path == "/local/plan":
             from .config import memory_plan
             self.reply(200, memory_plan(c))
@@ -97,7 +103,8 @@ class Handler(BaseHTTPRequestHandler):
         settings_preview = self.path == "/local/desktop/settings/preview"
         native = self.path in ("/v1/messages","/v1/messages/count_tokens")
         ace_plan = self.path == "/local/ace/harness-plan"
-        if self.path != "/v1/chat/completions" and not managed and not settings_preview and not native and not ace_plan:
+        cache_apply = self.path == "/local/cache/apply"
+        if self.path != "/v1/chat/completions" and not managed and not settings_preview and not native and not ace_plan and not cache_apply:
             self.error_json(404, "unknown endpoint")
             return
         if self.headers.get("Transfer-Encoding"):
@@ -126,6 +133,10 @@ class Handler(BaseHTTPRequestHandler):
         start = time.monotonic()
         plan = None
         try:
+            if cache_apply:
+                from .cache_control import rebuild
+                self.reply(200,rebuild(self.server.backend,self.server.config,body))
+                return
             if ace_plan:
                 self.reply(200,assess(self.server.backend,self.server.config,body))
                 return
@@ -181,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         except RequestError as exc:
             self.error_json(400, str(exc))
         except (ValueError,KeyError,TypeError) as exc:
-            if managed or settings_preview or ace_plan:
+            if managed or settings_preview or ace_plan or cache_apply:
                 self.error_json(400,"local request rejected: "+str(exc))
             elif not started:
                 self.error_json(502,"invalid backend response")

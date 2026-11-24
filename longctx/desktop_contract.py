@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 TARGET=1_000_000
 MODES=("exact","compressed","adaptive","virtual")
-SETTINGS=("context","output_reserve","ubatch","threads","freetoken_memory_ratio","kv_cache_dtype")
+SETTINGS=("context","output_reserve","ubatch","threads","freetoken_memory_ratio","kv_cache_dtype","kv_tokens","expert_slots")
 
 def describe(c):
     return {
@@ -23,10 +23,10 @@ def describe(c):
             "workspace_edit":{"status":"not_integrated","enabled":False},
             "managed_compact":{"status":"explicit_preview_commit_rollback"},
             "automatic_compact":{"status":"not_integrated"},
-            "settings_apply":{"status":"preview_only"}
+            "settings_apply":{"status":"startup_and_native_idle_rebuild_experimental"}
         },
         "settings":{k:getattr(c,k) for k in SETTINGS},
-        "frontend":{"target":"FreeToken Desktop","source_status":"not_verified_available"},
+        "frontend":{"target":"Local-Longctx Studio / Harness","source_status":"pinned_overlay"},
         "notes":["No claim of native million context or unlimited retention.",
                  "Do not enable unsupported actions in a frontend.",
                  "All inference settings changes require an idle supervised restart."]

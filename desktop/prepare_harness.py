@@ -24,7 +24,7 @@ def modify(root,path,edits):
     file.write_text(text,encoding="utf-8")
 
 def apply(root):
-    for name,dest in (("LocalLongctxPanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-ace-observer.ts","packages/compaction/compaction-basic/src/")):
+    for name,dest in (("LocalLongctxPanel.tsx",CARD),("LocalCachePanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-ace-observer.ts","packages/compaction/compaction-basic/src/")):
         target=root/dest/name
         if target.exists():
             raise RuntimeError("overlay destination already exists")
@@ -85,6 +85,8 @@ def apply(root):
     start: (settings: unknown) => ipcRenderer.invoke('local-longctx:start', settings),
     stop: () => ipcRenderer.invoke('local-longctx:stop'),
     connection: () => ipcRenderer.invoke('local-longctx:connection'),
+    cacheStatus: () => ipcRenderer.invoke('local-longctx:cache-status'),
+    cacheApply: (draft: unknown) => ipcRenderer.invoke('local-longctx:cache-apply', draft),
   })
 }
 markDocumentPlatform()""")])

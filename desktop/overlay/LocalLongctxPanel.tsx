@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import styles from './ModelsSection.module.css'
+import { CachePanel, type CacheBridge } from './LocalCachePanel.tsx'
 
 type State = { phase: string; model: string | null; engine: string | null; detail?: string }
-type Bridge = {
+type Bridge = CacheBridge & {
   status(): Promise<State>
   pick(kind: 'model' | 'engine'): Promise<State>
-  start(settings: {context: number; modelLimit: number; output: number; threads: number; ratio: number; dtype: string; verified: boolean}): Promise<State>
+  start(settings: {context: number; modelLimit: number; output: number; threads: number; ratio: number; dtype: string; verified: boolean; kvTokens:number; expertSlots:number; prefill:number}): Promise<State>
   stop(): Promise<State>
   connection(): Promise<{model: string; baseURL: string; key: string; context: number; output: number}>
 }
@@ -21,6 +22,9 @@ export function LocalLongctxPanel() {
   const [threads,setThreads] = useState(8)
   const [ratio,setRatio] = useState(.8)
   const [dtype,setDtype] = useState('auto')
+  const [kvTokens,setKvTokens]=useState(0)
+  const [expertSlots,setExpertSlots]=useState(0)
+  const [prefill,setPrefill]=useState(512)
   const [verified,setVerified] = useState(false)
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
@@ -52,10 +56,14 @@ export function LocalLongctxPanel() {
     <label>CPU threads <input type="number" min={1} max={1024} disabled={locked} value={threads} onChange={e=>setThreads(Number(e.target.value))}/></label>
     <label>VRAM ratio <input type="number" min={.1} max={.95} step={.05} disabled={locked} value={ratio} onChange={e=>setRatio(Number(e.target.value))}/></label>
     <label>KV dtype <select disabled={locked} value={dtype} onChange={e=>setDtype(e.target.value)}><option value="auto">Auto</option><option value="int8_per_token_head">INT8</option><option value="fp8_per_token_head">FP8</option></select></label>
+    <label>启动 KV 容量 / KV tokens (0=auto) <input type="number" min={0} max={2097152} disabled={locked} value={kvTokens} onChange={e=>setKvTokens(Number(e.target.value))}/></label>
+    <label>专家缓存 / Expert slots (0=auto) <input type="number" min={0} max={1000000} disabled={locked} value={expertSlots} onChange={e=>setExpertSlots(Number(e.target.value))}/></label>
+    <label>Prefill chunk <input type="number" min={1} max={context} disabled={locked} value={prefill} onChange={e=>setPrefill(Number(e.target.value))}/></label>
     <label><input type="checkbox" checked={verified} disabled={locked} onChange={e=>setVerified(e.target.checked)}/>已核实模型、引擎来源及兼容性 / Verified compatibility</label>
-    <div><button type="button" disabled={locked||!verified||!state.model||!state.engine} onClick={()=>void perform(()=>bridge.start({context,modelLimit:limit,output,threads,ratio,dtype,verified}))}>启动 / Start</button>
+    <div><button type="button" disabled={locked||!verified||!state.model||!state.engine} onClick={()=>void perform(()=>bridge.start({context,modelLimit:limit,output,threads,ratio,dtype,verified,kvTokens,expertSlots,prefill}))}>启动 / Start</button>
     <button type="button" disabled={busy||!['starting','ready'].includes(state.phase)} onClick={()=>void perform(()=>bridge.stop())}>停止 / Stop</button></div>
     {state.phase==='ready' ? <p>在下方添加自定义模型供应商，使用 Local-Longctx 预设。 / Add the Local-Longctx custom provider below.</p> : null}
+    {state.phase==='ready' ? <CachePanel bridge={bridge}/> : null}
     {error ? <p role="alert">{error}</p> : null}
     <p>Research preview: native Messages tool transport; ACE advisory only. Tool execution, GPU inference and multimodal integration require validation.</p>
   </section>
