@@ -1,0 +1,21 @@
+{
+  "server": "../bin/llama-server",
+  "model": "../models/nemotron-q4.gguf",
+  "model_id": "nemotron-local",
+  "context": 1000000,
+  "model_limit": 1000000,
+  "output_reserve": 4096,
+  "gpu_layers": 8,
+  "cpu_moe": true,
+  "kv_on_cpu": true,
+  "cache_type": "q8_0",
+  "batch": 512,
+  "ubatch": 128,
+  "threads": 8,
+  "state_dir": "../.local-longctx",
+  "attention_layers": 6,
+  "kv_heads": 2,
+  "head_dim": 128,
+  "ram_gib": 32,
+  "vram_gib": 8
+}
