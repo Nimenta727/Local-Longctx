@@ -4,11 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-longctx"
-version = "0.1.0"
-description = "Low-resource local long-context inference control plane"
+version = "0.2.0"
+description = "FreeToken-only MoE research control plane"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
-dependencies = []
 
 [project.scripts]
 longctx = "longctx.cli:main"

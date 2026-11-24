@@ -1,4 +1,4 @@
-"""Lifecycle and HTTP boundary for the upstream llama.cpp server."""
+"""Shared transport and lifecycle for FreeToken."""
 import http.client
 import json
 import os
@@ -15,25 +15,8 @@ def require_free(port):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", port))
 
-def command(c):
-    args = [str(c.server), "--model", str(c.model), "--alias", c.model_id,
-            "--host", "127.0.0.1", "--port", str(c.backend_port),
-            "--ctx-size", str(c.context), "--parallel", "1",
-            "--no-context-shift", "--fit", "off", "--n-gpu-layers", str(c.gpu_layers),
-            "--threads", str(c.threads), "--batch-size", str(c.batch),
-            "--ubatch-size", str(c.ubatch), "--cache-type-k", c.cache_type,
-            "--cache-type-v", c.cache_type, "--flash-attn",
-            "on" if c.cache_type != "f16" else "auto",
-            "--timeout", str(c.timeout), "--jinja"]
-    if c.kv_on_cpu:
-        args.append("--no-kv-offload")
-    if c.cpu_moe:
-        args.append("--cpu-moe")
-    return args
-
 def clean_env():
-    return {k: v for k, v in os.environ.items()
-            if not k.startswith("LLAMA_ARG_") and k != "LLAMA_API_KEY"}
+    return {k:v for k,v in os.environ.items() if not k.startswith("FREETOKEN_")}
 
 def stop_process(proc):
     if proc is None or proc.poll() is not None:
@@ -80,38 +63,7 @@ class Backend:
             conn.close()
 
     def start(self):
-        c = self.config
-        require_free(c.backend_port)
-        c.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        env = clean_env()
-        env["LLAMA_API_KEY"] = self.key
-        self.log = (c.state_dir / "backend.log").open("ab")
-        try:
-            self.proc = subprocess.Popen(command(c), env=env, stdout=self.log,
-                                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-            deadline = time.monotonic() + min(c.timeout, 1800)
-            while time.monotonic() < deadline:
-                if self.proc.poll() is not None:
-                    raise BackendError("llama-server exited; inspect backend.log")
-                try:
-                    health = self.json("/health", timeout=2)
-                except (OSError, http.client.HTTPException, BackendError, ValueError):
-                    time.sleep(0.5)
-                    continue
-                if health.get("status") == "ok":
-                    props = self.json("/props", timeout=10)
-                    actual = props.get("default_generation_settings", {}).get("n_ctx")
-                    if actual != c.context:
-                        raise BackendError("configured and reported context differ: " + str(actual))
-                    models = self.json("/v1/models", timeout=10)
-                    if c.model_id not in [x.get("id") for x in models.get("data", [])]:
-                        raise BackendError("configured model alias not advertised")
-                    return
-                time.sleep(0.5)
-            raise BackendError("backend startup timed out")
-        except BaseException:
-            self.close()
-            raise
+        raise NotImplementedError("use FreeTokenBackend")
 
     def close(self):
         try:

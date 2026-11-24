@@ -1,8 +1,8 @@
 # Third-party dependencies
 
-- llama.cpp: https://github.com/ggml-org/llama.cpp — external executable; upstream MIT license. No binary or code bundled.
-- OpenClaw: https://github.com/openclaw/openclaw — optional external executable and Control UI; upstream license and notices must accompany any future redistribution. No upstream code or brand assets bundled.
-- Model weights: separately obtained by the user; check each exact model and quantized artifact's license.
-- Python standard library: Python Software Foundation license.
+- FreeToken: https://github.com/FlashML-org/FreeToken — sole external inference executable.
+- OpenClaw: https://github.com/openclaw/openclaw — optional external UI and Gateway.
+- Models: separately licensed and user-provided.
+- Python standard library: PSF license.
 
-Local-Longctx is an independent project, not an official release or endorsement by the upstream projects. Before any packaged release, pin reviewed versions, generate an SBOM, preserve license and copyright notices, and review trademarks and assets separately.
+No third-party binaries bundled. Review exact upstream revisions, license notices, trademarks and SBOM before distribution. No official endorsement.

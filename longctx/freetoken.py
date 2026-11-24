@@ -9,8 +9,9 @@ def command(c,d):
             "--served-model-name",c.model_id,"--host","127.0.0.1",
             "--port",str(c.backend_port),"--gpu",d.gpu_uuid,
             "--max-running-requests","1","--max-output-tokens",str(c.output_reserve),
-            "--max-seq-len-override",str(c.context),"--max-prefill-length",str(c.ubatch),
-            "--memory-ratio",str(c.freetoken_memory_ratio),"--moe-strategy","auto",
+            "--max-seq-len-override",str(c.context),"--max-prefill-length",str(d.prefill_chunk),
+            "--memory-ratio",str(d.memory_ratio),"--moe-strategy","auto","--cache-type","radix",
+            "--kv-cache-dtype",c.kv_cache_dtype,
             "--moe-cpu-threads",str(d.threads),"--kv-reserve-tokens",str(c.context),
             "--enable-cache-report","--enable-timings-report"]
 

@@ -1,0 +1,44 @@
+{
+  "snapshot": {
+    "ram_free_gib": 3,
+    "ram_total_gib": 16,
+    "vram_free_gib": 1.4,
+    "vram_total_gib": 8,
+    "context_tokens": 29000,
+    "context_limit": 32768,
+    "output_reserve": 1024,
+    "growth_tokens_per_second": 50,
+    "kv_occupancy": 0.89,
+    "history_dependency": 0.3,
+    "prefill_tokens_per_second": 500,
+    "compact_seconds": 3,
+    "expected_turns": 8,
+    "prefix_recompute_tokens": 4000,
+    "idle": true,
+    "exact_mode": false,
+    "allow_semantic": true,
+    "cache_hit_fraction": 0.2,
+    "compact_peak_ram_gib": 0.5,
+    "compact_peak_vram_gib": 0.2
+  },
+  "segments": [
+    {
+      "id": "old-tool-result",
+      "tokens": 12000,
+      "importance": 0.1,
+      "access_frequency": 0.1,
+      "dependency": 0.1,
+      "summary_tokens": 1000,
+      "role": "tool_result"
+    },
+    {
+      "id": "current-task",
+      "tokens": 4000,
+      "importance": 1,
+      "access_frequency": 1,
+      "dependency": 1,
+      "summary_tokens": 3000,
+      "pinned": true
+    }
+  ]
+}

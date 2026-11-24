@@ -45,31 +45,12 @@ def prepare(body, c, backend):
     output = limits[0] if limits else c.output_reserve
     if type(output) is not int or not 1 <= output <= c.output_reserve:
         raise RequestError("requested output exceeds configured reserve")
-    # Count template-rendered text using the same model's tokenizer.
-    # add_special plus a small margin is conservative, not a proof of identical
-    # tokenization across upstream versions. Compare actual usage in benchmarks.
-    if hasattr(backend, "count_prompt"):
-        count=backend.count_prompt(messages)
-        try:
-            check_budget(count,output,c.context,margin=256)
-        except ValueError as exc:
-            raise RequestError(str(exc)) from exc
-        outbound={k:v for k,v in body.items() if k not in ("max_completion_tokens","tools","tool_choice")}
-        outbound["max_tokens"]=output
-        return Plan(count,output,c.context,"freetoken-native-experimental"),outbound
-    rendered = backend.json("/apply-template", {"messages": messages})
-    prompt = rendered.get("prompt")
-    if not isinstance(prompt, str):
-        raise RequestError("backend did not return a rendered prompt")
-    tokens = backend.json("/tokenize", {"content": prompt,
-                          "add_special": True, "parse_special": True}).get("tokens")
-    if not isinstance(tokens, list) or not all(type(t) is int for t in tokens):
-        raise RequestError("backend tokenizer returned unexpected response")
+    # Cross-API estimate; verify native template parity.
+    count=backend.count_prompt(messages)
     try:
-        check_budget(len(tokens),output,c.context)
+        check_budget(count,output,c.context,margin=256)
     except ValueError as exc:
         raise RequestError(str(exc)) from exc
-    outbound = {k: v for k, v in body.items()
-                if k not in ("max_completion_tokens", "tools", "tool_choice")}
-    outbound["max_tokens"] = output
-    return Plan(len(tokens), output, c.context, c.mode), outbound
+    outbound={k:v for k,v in body.items() if k not in ("max_completion_tokens","tools","tool_choice")}
+    outbound["max_tokens"]=output
+    return Plan(count,output,c.context,"freetoken-native-experimental"),outbound

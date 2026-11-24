@@ -8,7 +8,8 @@ import sys
 import threading
 import time
 from .config import Config, memory_plan
-from .backend import Backend, BackendError, require_free, command, clean_env
+from .backend import BackendError, require_free, clean_env
+from .compact import evaluate, Snapshot, Segment
 from .service import Server
 from .openclaw import Gateway, configuration
 from dataclasses import replace
@@ -24,7 +25,7 @@ def run(c, desktop=None):
     decision = choose(c, detect(c.state_dir))
     c = replace(c, threads=decision.threads)
     print("Engine: " + decision.engine + " | " + decision.reason, flush=True)
-    backend = FreeTokenBackend(c, decision) if decision.engine == "freetoken" else Backend(c)
+    backend = FreeTokenBackend(c, decision)
     server = None
     gateway = None
     worker = None
@@ -32,7 +33,7 @@ def run(c, desktop=None):
         backend.start()
         server = Server(c, backend, key)
         print("Local-Longctx API http://127.0.0.1:%d/v1 | %s | %d total tokens" %
-              (c.api_port, "freetoken-native-experimental" if decision.engine=="freetoken" else c.mode, c.context), flush=True)
+              (c.api_port, c.mode, c.context), flush=True)
         if desktop:
             worker = threading.Thread(target=server.serve_forever, daemon=True)
             worker.start()
@@ -85,6 +86,8 @@ def main(argv=None):
     p.add_argument("--config", default="config.local.json")
     sub = p.add_subparsers(dest="action", required=True)
     sub.add_parser("plan")
+    cp=sub.add_parser("compact-plan",help="evaluate supplied telemetry; no mutation")
+    cp.add_argument("snapshot")
     sub.add_parser("hardware")
     sub.add_parser("doctor")
     sub.add_parser("serve")
@@ -93,19 +96,26 @@ def main(argv=None):
     desktop.add_argument("--openclaw", required=True)
     a = p.parse_args(argv)
     try:
+        if a.action=="compact-plan":
+            from pathlib import Path
+            from dataclasses import asdict
+            raw=json.loads(Path(a.snapshot).read_text(encoding="utf-8"))
+            decision=evaluate(Snapshot(**raw["snapshot"]),[Segment(**x) for x in raw.get("segments",[])])
+            print(json.dumps(asdict(decision),indent=2))
+            return 0
         c = Config.load(a.config)
         if a.action in ("plan", "hardware"):
             r=report(c)
             if a.action=="plan":
-                r["llama_baseline_estimate"]=memory_plan(c)
+                r["native_kv_estimate"]=memory_plan(c)
             print(json.dumps(r, indent=2))
         elif a.action == "doctor":
             d=choose(c,detect(c.state_dir))
-            args=[str(c.freetoken_server),"serve","--help"] if d.engine=="freetoken" else [str(c.server),"--help"]
+            args=[str(c.freetoken_server),"serve","--help"]
             result = subprocess.run(args, env=clean_env(),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, timeout=30, check=True)
-            selected=ft_command(c,d) if d.engine=="freetoken" else command(c)
+            selected=ft_command(c,d)
             flags = [x for x in selected[1:] if x.startswith("--")]
             missing = [x for x in flags if x not in result.stdout]
             print(json.dumps({"missing_flags": missing,
@@ -118,7 +128,7 @@ def main(argv=None):
             run(c, a.openclaw if a.action == "desktop" else None)
     except KeyboardInterrupt:
         return 130
-    except (OSError, ValueError, TypeError, BackendError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, BackendError, subprocess.SubprocessError) as exc:
         print("Local-Longctx: " + str(exc), file=sys.stderr)
         return 1
     return 0
