@@ -67,3 +67,72 @@ class ManagedTest(unittest.TestCase):
         for value in ({}, {"a":{"b":float("nan")}}, {"a":{"b":True}}):
             with self.assertRaises(ValueError):
                 path_value(value,["a","b"])
+
+    def test_replay_task_state_and_recall(self):
+        from longctx.managed import dispatch
+
+        history = self.messages[1]["content"].splitlines()
+        history[200:203] = [
+            "Keep the public API stable.",
+            "Rejected v2 migration because it drops legacy clients.",
+            "decode_cache.py returned ERR_381. 缓存损坏需要重建。",
+        ]
+        messages = [*self.messages]
+        messages[1] = {"role": "assistant", "content": "\n".join(history)}
+        original = self.store.create("replay", messages, True)
+        segment = self.body["segments"][0]
+        legacy = self.call(session="replay", expected_sha=original["sha256"])
+        self.assertNotIn("ERR_381", legacy["preview_messages"][1]["content"])
+        self.assertNotIn("Rejected v2 migration", legacy["preview_messages"][1]["content"])
+        result = self.call(
+            session="replay", expected_sha=original["sha256"], commit=True,
+            segments=[{**segment, "task_state": [
+                {"kind": "constraint", "quote": "Keep the public API stable."},
+                {"kind": "failed_attempt", "quote": "Rejected v2 migration"},
+            ]}],
+        )
+        compacted = self.store.read("replay")
+        self.assertIn("[constraint; source 0:1] Keep the public API stable.",
+                      compacted["messages"][1]["content"])
+        self.assertIn("[failed_attempt; source 0:1] Rejected v2 migration because it drops legacy clients.",
+                      compacted["messages"][1]["content"])
+        self.assertNotIn("ERR_381", compacted["messages"][1]["content"])
+
+        def recall(budget, query, **kwargs):
+            return dispatch(self.store, FakeBackend(), self.c, "/local/session/recall",
+                            {"session": "replay", "query": query, "max_recall_tokens": budget, **kwargs})
+
+        for query in ("Check decode_cache.py and ERR_381", "缓存损坏怎么处理"):
+            recalled = recall(350, query)
+            self.assertEqual(recalled["messages"][:-1], compacted["messages"])
+            self.assertIn("ERR_381", recalled["messages"][-1]["content"])
+            self.assertGreater(recalled["recall_tokens"], 0)
+            self.assertLessEqual(recalled["recall_tokens"], 350)
+            self.assertEqual(len(recalled["sources"]), 1)
+            source = recalled["sources"][0]
+            self.assertEqual((source["revision"], source["index"]), (0, 1))
+            self.assertIn("ERR_381", messages[1]["content"][source["start"]:source["end"]])
+            self.assertLess(recalled["input_tokens"],
+                            FakeBackend().count_prompt(messages + [{"role": "user", "content": query}]))
+        self.assertEqual(recall(1, "ERR_381")["sources"], [])
+        self.assertEqual(self.store.read("replay")["revision"], 1)
+        # Rollback restores the branch that belonged to each target.
+        self.store.rollback("replay", 1, result["sha256"], 0)
+        self.assertEqual(recall(350, "ERR_381")["sources"], [])
+        self.store.rollback("replay", 2, original["sha256"], 1)
+        self.assertTrue(recall(350, "ERR_381")["sources"])
+
+    def test_protected_group(self):
+        result = self.call(protected_groups=[[0, 1]])
+        self.assertEqual(result["decision"]["candidates"], ())
+        self.assertEqual(self.store.read("s")["messages"], self.messages)
+
+    def test_warm_prefix_gate_expires_near_window(self):
+        from longctx.compact import Snapshot, Segment, evaluate
+
+        snapshot = Snapshot(7, 10, 8, 10, 8500, 10000, 100, 0, .85, .1, 100,
+                            0, 50, 0, exact_mode=False, allow_semantic=True, cache_hit_fraction=.8)
+        segment = Segment("1", 4000, .1, .1, .1, 0)
+        self.assertEqual(evaluate(snapshot, [segment]).action, "keep")
+        self.assertEqual(evaluate(replace(snapshot, context_tokens=9200), [segment]).action,
+                         "propose_semantic_compact")

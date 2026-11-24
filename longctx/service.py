@@ -104,7 +104,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return
         managed = self.path in ("/local/session/create","/local/session/read",
-                                "/local/session/append","/local/session/rollback","/local/session/compact")
+                                "/local/session/append","/local/session/rollback","/local/session/compact",
+                                "/local/session/recall")
         settings_preview = self.path == "/local/desktop/settings/preview"
         native = self.path in ("/v1/messages","/v1/messages/count_tokens")
         ace_plan = self.path == "/local/ace/harness-plan"

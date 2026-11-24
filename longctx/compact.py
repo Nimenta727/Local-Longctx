@@ -111,6 +111,8 @@ def evaluate(s,segments):
                       "exact/consent gate: preserve active prompt tokens")
     if s.history_dependency>=.8:
         return result("pause_or_native_reclaim" if urgent else "keep","high historical dependency")
+    if s.cache_hit_fraction>=.8 and used<.9*s.context_limit and not predicted and not urgent:
+        return result("keep","warm prefix and sufficient context headroom")
     if s.seconds_since_compact<60 and not urgent:
         return result("keep","cooldown")
     if s.compact_peak_ram_gib>s.ram_free_gib or s.compact_peak_vram_gib>s.vram_free_gib:

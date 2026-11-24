@@ -1,12 +1,14 @@
 # Local-Longctx Studio
 
-**v0.3.0-alpha.1 · Source preview / 源码预发行 · Apache-2.0**
+**v0.3.0-alpha.2 · Source preview / 源码预发行 · Apache-2.0**
 
 本地 NVIDIA MoE AI 工作台：以 FreeToken 为唯一推理后端，以开源 Harness 为桌面及 Agent 基础，研发自适应长上下文管理。独立项目，非上游官方产品。
 
 A local NVIDIA MoE AI workbench: FreeToken is the sole inference backend; open-source Harness provides the desktop and agent foundation. Adaptive long-context management is under development. Independent project, not an official upstream product.
 
 [中文使用指南 / English guide](docs/usage.md) · [架构 / Architecture](docs/architecture.md) · [测试 / Verification](docs/testing.md) · [发行 / Release](docs/release.md) · [研发记录 / Development log](docs/routine/README.md)
+
+[新版发行说明 / Release notes](RELEASE_NOTES.md) · [受管会话操作示例 / Managed session walkthrough](docs/usage.md#managed-sessions)
 
 ## 核心能力 / Core capabilities
 

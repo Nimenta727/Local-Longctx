@@ -28,8 +28,21 @@ def main():
     body = {"model": args.model, "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 64, "temperature": 0, "stream": True,
             "stream_options": {"include_usage": True}}
+    result = stream_completion(args.port, body)
+    answer = result.pop("text")
+    result.update(model=args.model, corpus_chars=len(text), needle_character_fraction=args.position,
+                  exact_match=answer.strip() == secret,
+                  note="Single smoke test; character position is not token position; usage absent means token length unverified.")
+    out = json.dumps(result, indent=2)
+    print(out)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(out+"\n", encoding="utf-8")
+    return 0 if result["stream_complete"] and result["exact_match"] else 1
+
+def stream_completion(port, body):
     key = os.environ["LOCAL_LONGCTX_API_KEY"]
-    conn = http.client.HTTPConnection("127.0.0.1", args.port, timeout=86400)
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=86400)
     start = time.monotonic()
     first = None
     chunks = []
@@ -60,18 +73,10 @@ def main():
     finally:
         conn.close()
     end = time.monotonic()
-    result = {"model": args.model, "corpus_chars": len(text),
-              "needle_character_fraction": args.position, "stream_complete": complete,
-              "exact_match": "".join(chunks).strip() == secret,
-              "ttft_seconds": first-start if first is not None else None,
-              "elapsed_seconds": end-start, "usage": usage,
-              "note": "Single smoke test; character position is not token position; usage absent means token length unverified."}
-    out = json.dumps(result, indent=2)
-    print(out)
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(out+"\n", encoding="utf-8")
-    return 0 if complete and result["exact_match"] else 1
+    return {"stream_complete": complete, "text": "".join(chunks),
+            "ttft_seconds": first-start if first is not None else None,
+            "elapsed_seconds": end-start, "usage": usage}
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

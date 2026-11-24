@@ -6,6 +6,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from .archive import search
+
 def canonical(messages):
     return json.dumps(messages,ensure_ascii=False,separators=(",",":"),allow_nan=False)
 
@@ -84,7 +86,21 @@ class Store:
             db.execute("INSERT INTO heads VALUES(?,?,?)",(sid,0,int(allow_semantic)))
             return self._read(db,sid)
 
-    def commit(self,sid,expected_revision,expected_sha,messages,action):
+    def recall(self, sid, revision, query):
+        self.check_id(sid)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("CREATE TABLE IF NOT EXISTS archive_indexed "
+                       "(sid TEXT, rev INTEGER, PRIMARY KEY(sid,rev))")
+            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS archive_search USING "
+                       "fts5(sid UNINDEXED, revision UNINDEXED, source_revision UNINDEXED, "
+                       "message_index UNINDEXED, start UNINDEXED, stop UNINDEXED, words)")
+            snapshot = self._read(db, sid, revision)
+            hits = search(db, sid, snapshot["revision"], query,
+                          lambda session, rev: self._read(db, session, rev))
+            return snapshot, hits
+
+    def commit(self,sid,expected_revision,expected_sha,messages,action,*,parent=None):
         validate_messages(messages)
         if type(expected_revision) is not int or not isinstance(expected_sha,str):
             raise ValueError("expected revision and SHA required")
@@ -100,7 +116,7 @@ class Store:
             if action=="append" and messages[:len(old["messages"])]!=old["messages"]:
                 raise ValueError("append must preserve previous messages")
             rev=expected_revision+1
-            db.execute("INSERT INTO revisions VALUES(?,?,?,?,?,?)",(sid,rev,expected_revision,canonical(messages),digest(messages),action))
+            db.execute("INSERT INTO revisions VALUES(?,?,?,?,?,?)",(sid,rev,expected_revision if parent is None else parent,canonical(messages),digest(messages),action))
             db.execute("UPDATE heads SET rev=? WHERE sid=?",(rev,sid))
             return self._read(db,sid)
 
@@ -108,4 +124,4 @@ class Store:
         old=self.read(sid,target)
         if old["revision"]>expected_revision:
             raise ValueError("cannot restore future revision")
-        return self.commit(sid,expected_revision,expected_sha,old["messages"],"rollback")
+        return self.commit(sid,expected_revision,expected_sha,old["messages"],"rollback",parent=old["revision"])
