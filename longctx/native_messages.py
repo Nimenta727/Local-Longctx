@@ -32,7 +32,9 @@ def validate_prompt(body,c,count_only=False):
     messages=body.get("messages")
     if not isinstance(messages,list) or not messages:
         fail("nonempty messages required")
-    tools=body.get("tools") or []
+    tools=body.get("tools")
+    if tools is None:
+        tools=[]
     if not isinstance(tools,list):
         fail("invalid tools")
     names=set()

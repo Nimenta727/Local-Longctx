@@ -1,9 +1,7 @@
-"""Parent-owned worker for the Harness development desktop. EOF stops the server."""
+"""Desktop child worker; EOF stops inference / 桌面子进程，EOF 触发停止。"""
 import os
 import sys
 import threading
-import time
-from pathlib import Path
 from .config import Config
 from .backend import require_free
 from .freetoken import FreeTokenBackend
@@ -14,7 +12,7 @@ from .service import Server
 def run(path):
     c=Config.load(path)
     key=os.environ.get("LOCAL_LONGCTX_API_KEY","")
-    if len(key)<24 or not key.isascii():
+    if len(key)<24 or not key.isascii() or any(ch.isspace() for ch in key):
         raise ValueError("missing desktop session key")
     c.state_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
     stopped=threading.Event()

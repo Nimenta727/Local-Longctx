@@ -17,14 +17,14 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
       if(running||busy)return
       running=true
       try{const x=await bridge.cacheStatus();if(live){setSnap(x);setError('')}}
-      catch{if(live)setError('Native telemetry unavailable')}
+      catch{if(live)setError('原生遥测不可用 / Native telemetry unavailable')}
       finally{running=false}
     }
     void refresh()
     const timer=setInterval(()=>{void refresh()},2000)
     return()=>{live=false;clearInterval(timer)}
   },[bridge,busy])
-  if(!snap)return <p>{error||'Loading native cache geometry…'}</p>
+  if(!snap)return <p>{error||'正在读取缓存 / Loading native cache…'}</p>
   const changed=Object.keys(draft).length>0
   const stale=changed&&revision!==snap.revision
   const total=Object.entries(snap.pools).reduce((n,[name,p])=>n+(draft[name]??p.value)*p.unit_bytes,0)
@@ -45,7 +45,7 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
   }
   return <section aria-label="Native cache settings">
     <h3>Cache 配置 / Native pools</h3>
-    <p>模型窗口 {snap.native_window.toLocaleString()} · KV capacity {snap.pools.kv_tokens?.value.toLocaleString()} · Active requests {snap.active_requests}</p>
+    <p>模型窗口 / Model window {snap.native_window.toLocaleString()} · KV capacity {snap.pools.kv_tokens?.value.toLocaleString()} · 活跃请求 / Active {snap.active_requests}</p>
     <div><button type="button" disabled={busy} onClick={()=>preset(false)}>Chat 16K</button> <button type="button" disabled={busy} onClick={()=>preset(true)}>Agent ≤128K</button></div>
     {Object.entries(snap.pools).filter(([,p])=>p.value>0||p.adjustable).map(([name,p])=>{
       const n=draft[name]??p.value
@@ -54,12 +54,12 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
         <input type="number" value={n} step={p.step||1} disabled={busy||!p.adjustable||stale} onChange={e=>edit(name,Number(e.target.value))}/>
       </label></div>
     })}
-    <p>Estimated cache {gib(total)} / {gib(snap.budget_bytes)} GiB (native final fit may differ).</p>
+    <p>预计缓存 / Estimated cache {gib(total)} / {gib(snap.budget_bytes)} GiB （实际以引擎为准 / native final fit may differ）</p>
     <p>RAM {snap.ram_free_gib===null?'—':snap.ram_free_gib.toFixed(2)} / {snap.ram_total_gib??'—'} GiB free · VRAM {snap.vram_free_gib===null?'—':snap.vram_free_gib.toFixed(2)} / {snap.vram_total_gib??'—'} GiB free</p>
     <p>Prefill {snap.prefill_tps} tok/s · Decode {snap.decode_tps} tok/s · Completed {snap.completed} · KV {snap.kv_usage?Math.round(100*snap.kv_usage.used_pages/Math.max(1,snap.kv_usage.total_pages))+'%':'—'}</p>
-    <button type="button" disabled={busy||!changed} onClick={()=>setDraft({})}>Reset</button>
-    <button type="button" disabled={busy||!changed||invalid||stale||!!error||snap.active_requests!==0||!snap.budget_bytes||total>snap.budget_bytes} onClick={()=>void apply()}>Apply · idle only</button>
-    {stale?<p>Cache changed; reset and re-plan.</p>:null}{error?<p role="alert">{error}</p>:null}
-    <p>Live resize is experimental and not persisted on restart. It may invalidate prefix reuse. It cannot extend the model window.</p>
+    <button type="button" disabled={busy||!changed} onClick={()=>setDraft({})}>重置 / Reset</button>
+    <button type="button" disabled={busy||!changed||invalid||stale||!!error||snap.active_requests!==0||!snap.budget_bytes||total>snap.budget_bytes} onClick={()=>void apply()}>应用（空闲） / Apply idle</button>
+    {stale?<p>缓存已变化，请重置。 / Cache changed; reset and re-plan.</p>:null}{error?<p role="alert">{error}</p>:null}
+    <p>实时调整为实验功能，重启不保留；可能使前缀缓存失效，不能扩大模型窗口。 / Experimental, not persisted; may invalidate prefixes and cannot extend the model window.</p>
   </section>
 }

@@ -1,43 +1,49 @@
-# Local-Longctx / MillionContext
+# Local-Longctx Studio
 
-v0.2.0 · Apache-2.0 · NVIDIA MoE research preview
+**v0.3.0-alpha.1 · Source preview / 源码预发行 · Apache-2.0**
 
-唯一推理后端：FreeToken。自研 ACMA 长上下文管理、AHS 硬件调度和 ACE 自适应 Compact；V4 目标复用 FreeToken Desktop 前端（源码授权尚待核实），旧 OpenClaw 启动器暂保留。V2.x 多后端设计废止。
+本地 NVIDIA MoE AI 工作台：以 FreeToken 为唯一推理后端，以开源 Harness 为桌面及 Agent 基础，研发自适应长上下文管理。独立项目，非上游官方产品。
 
-Python 3.10+；从 https://github.com/FlashML-org/FreeToken 获取可信本地 ft 与支持的 MoE GGUF，核实版本、GPU、模型窗口及许可证。复制 configs/example.json 为 configs/config.local.json，填写路径和核实过的兼容性标记。先小窗口试验：
+A local NVIDIA MoE AI workbench: FreeToken is the sole inference backend; open-source Harness provides the desktop and agent foundation. Adaptive long-context management is under development. Independent project, not an official upstream product.
 
-    python -m unittest discover -s tests -v
-    python -m longctx --config configs/config.local.json hardware
-    python -m longctx --config configs/config.local.json plan
-    python -m longctx --config configs/config.local.json doctor
-    python -m longctx --config configs/config.local.json serve
+[中文使用指南 / English guide](docs/usage.md) · [架构 / Architecture](docs/architecture.md) · [测试 / Verification](docs/testing.md) · [发行 / Release](docs/release.md) · [研发记录 / Development log](docs/routine/README.md)
 
-本地 API http://127.0.0.1:18080/v1；使用私有 LOCAL_LONGCTX_API_KEY 或终端生成的会话密钥。仅文本、单请求、SSE；不支持工具调用。硬件不满足时拒绝启动，不换引擎。跨 API token 预检是估算，模板一致性仍需验证。
+## 核心能力 / Core capabilities
 
-## Adaptive Compact Engine
+| 中文 | English | 状态 / Status |
+| --- | --- | --- |
+| FreeToken MoE、本地资源调度 AHS | FreeToken MoE and AHS resource planning | Source preview / 源码预览 |
+| Messages 工具协议、文本 API | Native Messages tool transport and text API | End-to-end unverified / 未完成联调 |
+| ACE 自适应压缩、历史归档及回滚 | ACE policy, managed history archive and rollback | Advisory / explicit commit / 观察与显式提交 |
+| GUI 模型配置、KV/MoE/SWA/GDN 容量控制 | GUI model settings and native cache pools | Unbuilt overlay / 未构建覆盖层 |
+| 百万逻辑历史目标 | Million-token logical history target | Research target / 研发目标 |
 
-    python -m longctx compact-plan configs/compact.example.json
+**边界 / Boundaries:** 尚未完成原生百万 Token、真实 GPU 性能、完整桌面编译、自动 ACE 闭环、多模态与完整工具执行验证。没有已验证的 Windows 安装包。模型窗口不等于 KV 容量。No verified native 1M, GPU performance, complete desktop build, automatic ACE transaction, multimodal or full tool execution. No verified Windows installer. Model window is not KV capacity.
 
-ACE 依据 RAM、VRAM、增长率、KV 占用、重要性、访问频率、历史依赖与压缩/重放成本，返回决策和候选段 ID。精确模式及未经授权的语义压缩受保护。此命令仅分析输入快照，不修改历史、不执行模型摘要或迁移 KV。新增独立受管会话 API，支持只读 FreeToken 遥测、显式预览/提交的摘录式压缩、原文归档与回滚；普通聊天不改写。在线自动评分与 OpenClaw 接入仍待研发。详见 [受管会话接口](docs/architecture/ace-managed.md)。
+## 快速开始 / Quick start
 
-OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --openclaw /absolute/path/to/openclaw 试验启动器；暂未自有品牌发行。现有工具及插件默认禁用。
+需要 Python 3.10+、可信本地 FreeToken 及其支持的 MoE GGUF、NVIDIA GPU 和匹配驱动。桌面开发需要上游指定 Node.js/pnpm。Requires Python 3.10+, trusted FreeToken and compatible MoE GGUF, NVIDIA GPU and matching drivers. Desktop development requires the pinned upstream Node.js/pnpm toolchain.
 
-见 [V3设计](docs/architecture/acma-v3.md) 与 [研发记录](docs/routine/2026-11-24-acma-ace.md)。未完成实际 GPU/OpenClaw 测试；不声称百万原生上下文已实现。第三方项目各自许可。
+```bash
+git clone https://github.com/Nimenta727/Local-Longctx.git
+cd Local-Longctx
+python -m longctx --version
+python -m unittest discover -s tests -v
+python -m longctx compact-plan configs/compact.example.json
+```
 
-[本次开发记录](docs/routine/2026-11-24-ace-managed.md)
+桌面：按照 [桌面指南 / Desktop guide](desktop/README.md) 准备固定 Harness 源码、依赖和构建，再运行开发 GUI。后端 CLI：复制 configs/example.json 为 configs/config.local.json，核实模型和引擎，运行 hardware、plan、doctor、serve。Desktop: prepare pinned Harness sources and dependencies, build and launch development GUI. CLI: copy the example config, verify model/engine, then run hardware, plan, doctor and serve.
 
-## V4 桌面路线
+## 仓库结构 / Repository layout
 
-[统一桌面架构与验收要求](docs/architecture/desktop-v4.md)。新增认证 API `GET /local/desktop/capabilities` 和 `POST /local/desktop/settings/preview`；只读能力/参数预览，不执行设置应用，不代表图形界面已改造。目标默认百万逻辑窗口，原生窗口独立核实。DeepSeek Harness 搜索、文件工具与多模态待集成。见 [研发记录](docs/routine/2026-11-24-desktop-v4.md)。
+- `longctx/` — 推理控制、协议、ACE、原生缓存 / inference control, protocol, ACE, cache.
+- `desktop/` — 固定 Harness 集成 / pinned Harness integration.
+- `configs/` — 参数示例 / example configurations.
+- `tests/`, `benchmarks/` — 核心验证及真实协议测试入口 / core verification and protocol smoke entry points.
+- `docs/` — 双语文档与研发记录 / bilingual documentation and development history.
 
-## V5 桌面产品路线
+main 不包含独立研究实验、旧 OpenClaw 入口或过时设计。完整 V5.2 历史与 CUDA、KV 量化、稀疏注意力及 RAM/SSD 研究保存在 [research/v5.2-archive](https://github.com/Nimenta727/Local-Longctx/tree/research/v5.2-archive)。Main contains no standalone experimental kernels or obsolete OpenClaw entry points. The full V5.2 history and research are preserved on the research archive branch.
 
-正式桌面基础改为 DeepSeek Harness；FreeToken 仅作为 MoE 计算后端。新增 [锁定上游源码 overlay 与 GUI 模型设置预览](desktop/README.md)。保留上游工具及 MIT 归属；尚未验证本地工具调用、自动 ACE、完整品牌和安装包。V4 FreeToken Desktop 方案已被替代。见 [本次开发记录](docs/routine/2026-11-24-harness-studio.md)。
+## 许可 / License
 
-## V5.1 Native tools / ACE / ACMA
-
-新增本地 Anthropic Messages 原生工具传输预览、Harness 压缩边界 ACE 只读接入及 CPU 分块注意力参考。当前不宣称工具执行、自动压缩或 GPU 加速已验证；详见 [技术接口与边界](docs/architecture/harness-native-ace.md) 和 [研发记录](docs/routine/2026-11-24-native-tools-ace-attention.md)。
-
-## V5.2 Cache workbench
-
-新增 [缓存参数工作台与研究验收说明](docs/architecture/cache-workbench.md)，支持原生缓存几何读取、实验性空闲调整及启动配置；新增真实协议 smoke、桌面构建入口、分块 GPU 张量计算、混合 KV 量化和 RAM/SSD 存储研究。未经过实机测试，自动 ACE、融合内核与原生三级迁移仍待完成。见 [研发记录](docs/routine/2026-11-24-cache-workbench.md)。
+自有代码 Apache-2.0；第三方源码与模型使用各自许可证。保留上游版权及 MIT 声明，不使用上游商标冒充官方发行。Own code is Apache-2.0; upstream software and models retain their own licenses. Preserve copyright and MIT notices; no official endorsement. See [THIRD_PARTY.md](THIRD_PARTY.md).

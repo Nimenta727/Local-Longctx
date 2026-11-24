@@ -1,4 +1,4 @@
-"""Loopback-only OpenAI-compatible text gateway, single active request."""
+"""Authenticated local Messages/text gateway / 本地鉴权推理网关。"""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
 import http.client
@@ -6,6 +6,7 @@ import json
 import threading
 import sqlite3
 import time
+from . import __version__
 from .planner import prepare, RequestError
 from .backend import BackendError
 from .session_store import Store, Conflict
@@ -14,6 +15,10 @@ from .native_messages import prepare_native, validate_prompt, count_native
 from .harness_ace import assess
 
 MAX_BODY = 32 * 1024 * 1024
+
+def reject_constant(value):
+    """Reject NaN/Infinity / 拒绝非标准 JSON 数值。"""
+    raise ValueError("invalid JSON constant: "+value)
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
@@ -26,7 +31,7 @@ class Server(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", config.api_port), Handler)
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Local-Longctx/0.1"
+    server_version = "Local-Longctx/" + __version__
 
     def setup(self):
         super().setup()
@@ -121,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(size)
             if len(raw) != size:
                 raise ValueError("incomplete body")
-            body = json.loads(raw)
+            body = json.loads(raw, parse_constant=reject_constant)
         except (ValueError, OSError, RecursionError):
             self.error_json(400, "invalid JSON request")
             return
@@ -185,6 +190,8 @@ class Handler(BaseHTTPRequestHandler):
                 line = res.readline(1024 * 1024)
                 if not line:
                     break
+                if len(line) == 1024 * 1024 and not line.endswith(b"\n"):
+                    raise BackendError("SSE line exceeds limit")
                 self.wfile.write(line)
                 self.wfile.flush()
         except Conflict as exc:

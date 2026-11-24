@@ -1,4 +1,4 @@
-"""Strict text-chat request admission; no automatic truncation or RAG."""
+"""Text request admission / 文本请求预算检查；不静默截断。"""
 from dataclasses import dataclass
 from .context import check_budget
 
@@ -26,7 +26,7 @@ def prepare(body, c, backend):
     if body.get("model") != c.model_id:
         raise RequestError("unknown model")
     if body.get("tools") or body.get("tool_choice", "none") not in (None, "none", "auto"):
-        raise RequestError("tool calls not supported in v0.1")
+        raise RequestError("use native Messages for tool calling")
     if body.get("n", 1) != 1:
         raise RequestError("only one completion is supported")
     if type(body.get("stream", False)) is not bool:

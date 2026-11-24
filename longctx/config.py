@@ -1,4 +1,4 @@
-"""FreeToken-only configuration. All resource estimates are provisional."""
+"""FreeToken settings and estimates / FreeToken 配置与资源估算。"""
 from dataclasses import dataclass
 from pathlib import Path
 import json
@@ -99,6 +99,7 @@ def memory_plan(c):
     per_token=2*c.attention_layers*c.kv_heads*(2*c.head_dim if c.kv_cache_dtype=="auto" else c.head_dim+4)
     return {"engine":"freetoken","native_window":c.context,"logical_target":c.logical_target,
             "output_reserve":c.output_reserve,"weight_file_gib":c.model.stat().st_size/GIB,
-            "attention_kv_estimate_gib":per_token*c.context/GIB if known else None,
-            "kv_dtype":c.kv_cache_dtype,
+            "attention_kv_estimate_gib":per_token*(c.kv_tokens or c.context)/GIB if known else None,
+            "kv_dtype":c.kv_cache_dtype,"requested_kv_tokens":c.kv_tokens or None,
+            "expert_slots":c.expert_slots or None,
             "warning":"GQA estimate only; auto assumes 16-bit. Excludes shards, recurrent state, workspace, MLA/SWA and experts. Logical target is not a native window."}

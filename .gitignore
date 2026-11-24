@@ -12,3 +12,9 @@ benchmark-results/
 
 # Pinned local upstream development checkout
 /desktop/upstream/
+
+# Local build and release output / 本地构建产物
+/build/
+/dist/
+*.egg-info/
+/.release/

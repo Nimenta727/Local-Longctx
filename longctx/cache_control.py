@@ -1,9 +1,8 @@
-"""Strict FreeToken cache geometry and explicitly approved idle rebuild."""
+"""Native cache geometry and approved idle rebuild / 原生缓存预算与空闲重建。"""
 import hashlib
 import json
 from .hardware import detect
 
-GIB=1024**3
 POOLS={"kv_tokens":("num_pages","page_size","kv_per_token"),
        "moe_experts":("moe_cache_size",None,"moe_per_expert"),
        "swa_tokens":("num_swa_pages","swa_page_size","swa_per_token"),
@@ -30,7 +29,7 @@ def geometry(raw):
             raise ValueError("invalid page unit")
         if upper<lower and upper!=0:
             raise ValueError("invalid native limits")
-        value=count*step
+        value=uint(count*step)
         pools[name]={"value":value,"step":step,"min":lower,"max":upper,
                      "unit_bytes":byte_cost,"adjustable":bool(step and upper and byte_cost and budget)}
     identity={"pools":pools,"budget_bytes":budget}
@@ -66,7 +65,7 @@ def plan(g,changes):
             args[field]=n//p["step"]
         if n and not p["unit_bytes"]:
             raise ValueError("unknown occupied pool cost")
-        estimated+=n*p["unit_bytes"]
+        estimated=uint(estimated+n*p["unit_bytes"])
     if not g["budget_bytes"] or estimated>g["budget_bytes"]:
         raise ValueError("combined pools exceed native cache budget")
     return {"arguments":args,"estimated_bytes":estimated,"budget_bytes":g["budget_bytes"],

@@ -1,5 +1,4 @@
-"""GUI-facing capability and configuration preview, not a desktop implementation."""
-from dataclasses import dataclass
+"""Desktop capability contract / 桌面功能与参数预检契约。"""
 
 TARGET=1_000_000
 MODES=("exact","compressed","adaptive","virtual")
@@ -17,6 +16,7 @@ def describe(c):
                    "current_mode":c.mode,"logical_target":c.logical_target},
         "capabilities":{
             "text_chat":{"status":"experimental"},
+            "native_messages":{"status":"transport_preview_not_end_to_end_verified"},
             "image_input":{"status":"not_integrated"},
             "document_import":{"status":"not_integrated"},
             "web_search":{"status":"not_integrated","enabled":False},
@@ -29,7 +29,7 @@ def describe(c):
         "frontend":{"target":"Local-Longctx Studio / Harness","source_status":"pinned_overlay"},
         "notes":["No claim of native million context or unlimited retention.",
                  "Do not enable unsupported actions in a frontend.",
-                 "All inference settings changes require an idle supervised restart."]
+                 "Startup settings require a restart; native pool resize is an experimental idle-only action."]
     }
 
 def preview(c,body):

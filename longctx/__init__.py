@@ -1,2 +1,2 @@
-"""FreeToken-only Local-Longctx control plane."""
-__version__="0.2.0"
+"""Local-Longctx Studio core / 本地推理核心。"""
+__version__ = "0.3.0a1"

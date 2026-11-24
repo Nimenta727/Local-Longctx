@@ -3,12 +3,14 @@
   "model": "../models/moe.gguf",
   "model_is_moe": true,
   "freetoken_model_verified": false,
-  "context": 32768,
+  "context": 8192,
   "model_limit": 32768,
   "logical_target": 1000000,
   "output_reserve": 1024,
   "ubatch": 512,
   "threads": 8,
+  "kv_tokens": 0,
+  "expert_slots": 0,
   "kv_cache_dtype": "auto",
   "state_dir": "../.local-longctx"
 }
