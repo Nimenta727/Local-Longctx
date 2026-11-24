@@ -1,0 +1,15 @@
+{
+  "server": "../bin/llama-server",
+  "freetoken_server": "../bin/ft",
+  "model": "../models/qwen-moe.gguf",
+  "engine": "auto",
+  "model_is_moe": true,
+  "freetoken_model_verified": false,
+  "context": 32768,
+  "model_limit": 32768,
+  "output_reserve": 1024,
+  "ram_gib": 32,
+  "vram_gib": 8,
+  "freetoken_min_vram_gib": 8,
+  "freetoken_memory_ratio": 0.8
+}

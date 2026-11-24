@@ -32,6 +32,12 @@ class Config:
     head_dim: int = 0
     ram_gib: float = 16
     vram_gib: float = 0
+    engine: str = "llama"
+    freetoken_server: Path | None = None
+    model_is_moe: bool = False
+    freetoken_model_verified: bool = False
+    freetoken_min_vram_gib: float = 8
+    freetoken_memory_ratio: float = 0.8
 
     @property
     def mode(self):
@@ -70,7 +76,15 @@ class Config:
         with self.model.open("rb") as f:
             if f.read(4) != b"GGUF":
                 raise ValueError("invalid GGUF magic")
-        if not self.server.is_file():
+        if self.engine not in ("auto", "llama", "freetoken"):
+            raise ValueError("unknown engine")
+        if any(type(x) is not bool for x in (self.model_is_moe, self.freetoken_model_verified)):
+            raise ValueError("compatibility flags must be boolean")
+        if not 0 < self.freetoken_min_vram_gib <= 1024 or not 0.1 <= self.freetoken_memory_ratio <= 0.95:
+            raise ValueError("invalid FreeToken resource limits")
+        if self.engine == "freetoken" and (not self.freetoken_server or not self.freetoken_server.is_file()):
+            raise ValueError("select a local ft executable")
+        if self.engine != "freetoken" and not self.server.is_file():
             raise ValueError("select an existing llama-server executable")
         return self
 
@@ -80,8 +94,8 @@ class Config:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("config must be an object")
-        for key in ("server", "model", "state_dir"):
-            if key in data:
+        for key in ("server", "model", "state_dir", "freetoken_server"):
+            if key in data and data[key] is not None:
                 data[key] = (path.parent / data[key]).resolve()
         if "state_dir" not in data:
             data["state_dir"] = path.parent / ".local-longctx"

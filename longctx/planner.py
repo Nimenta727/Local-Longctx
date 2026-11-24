@@ -1,5 +1,6 @@
 """Strict text-chat request admission; no automatic truncation or RAG."""
 from dataclasses import dataclass
+from .context import check_budget
 
 class RequestError(ValueError):
     pass
@@ -47,6 +48,15 @@ def prepare(body, c, backend):
     # Count template-rendered text using the same model's tokenizer.
     # add_special plus a small margin is conservative, not a proof of identical
     # tokenization across upstream versions. Compare actual usage in benchmarks.
+    if hasattr(backend, "count_prompt"):
+        count=backend.count_prompt(messages)
+        try:
+            check_budget(count,output,c.context,margin=256)
+        except ValueError as exc:
+            raise RequestError(str(exc)) from exc
+        outbound={k:v for k,v in body.items() if k not in ("max_completion_tokens","tools","tool_choice")}
+        outbound["max_tokens"]=output
+        return Plan(count,output,c.context,"freetoken-native-experimental"),outbound
     rendered = backend.json("/apply-template", {"messages": messages})
     prompt = rendered.get("prompt")
     if not isinstance(prompt, str):
@@ -55,8 +65,10 @@ def prepare(body, c, backend):
                           "add_special": True, "parse_special": True}).get("tokens")
     if not isinstance(tokens, list) or not all(type(t) is int for t in tokens):
         raise RequestError("backend tokenizer returned unexpected response")
-    if len(tokens) + output + 16 > c.context:
-        raise RequestError("context budget exceeded; no automatic truncation")
+    try:
+        check_budget(len(tokens),output,c.context)
+    except ValueError as exc:
+        raise RequestError(str(exc)) from exc
     outbound = {k: v for k, v in body.items()
                 if k not in ("max_completion_tokens", "tools", "tool_choice")}
     outbound["max_tokens"] = output
