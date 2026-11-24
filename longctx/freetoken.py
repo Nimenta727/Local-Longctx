@@ -20,7 +20,7 @@ class FreeTokenBackend(Backend):
         super().__init__(c)
         self.decision=decision
 
-    def start(self):
+    def start(self, stop_event=None):
         c=self.config
         require_free(c.backend_port)
         c.state_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -32,6 +32,8 @@ class FreeTokenBackend(Backend):
                                        stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL)
             deadline=time.monotonic()+min(c.timeout,1800)
             while time.monotonic()<deadline:
+                if stop_event is not None and stop_event.is_set():
+                    raise BackendError("desktop startup cancelled")
                 if self.proc.poll() is not None:
                     raise BackendError("FreeToken exited; inspect freetoken.log")
                 try:

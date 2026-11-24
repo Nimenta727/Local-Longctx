@@ -9,3 +9,6 @@ config.local.json
 *.gguf
 *.log
 benchmark-results/
+
+# Pinned local upstream development checkout
+/desktop/upstream/

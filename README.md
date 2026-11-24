@@ -29,3 +29,7 @@ OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --open
 ## V4 桌面路线
 
 [统一桌面架构与验收要求](docs/architecture/desktop-v4.md)。新增认证 API `GET /local/desktop/capabilities` 和 `POST /local/desktop/settings/preview`；只读能力/参数预览，不执行设置应用，不代表图形界面已改造。目标默认百万逻辑窗口，原生窗口独立核实。DeepSeek Harness 搜索、文件工具与多模态待集成。见 [研发记录](docs/routine/2026-11-24-desktop-v4.md)。
+
+## V5 桌面产品路线
+
+正式桌面基础改为 DeepSeek Harness；FreeToken 仅作为 MoE 计算后端。新增 [锁定上游源码 overlay 与 GUI 模型设置预览](desktop/README.md)。保留上游工具及 MIT 归属；尚未验证本地工具调用、自动 ACE、完整品牌和安装包。V4 FreeToken Desktop 方案已被替代。见 [本次开发记录](docs/routine/2026-11-24-harness-studio.md)。
