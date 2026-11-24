@@ -82,7 +82,7 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
   ipcMain.handle(PREFIX+'stop',event=>{owner(event);if(child){phase='stopping';child.stdin?.end()}return status()})
   ipcMain.handle(PREFIX+'connection',event=>{
     owner(event);if(phase!=='ready'||!key)throw new Error('Start engine first')
-    return {model:'local-longctx',baseURL:'http://127.0.0.1:18080/v1',key,context,output}
+    return {model:'local-longctx',baseURL:'http://127.0.0.1:18080',key,context,output}
   })
   app.on('will-quit',()=>{child?.stdin?.end()})
 }

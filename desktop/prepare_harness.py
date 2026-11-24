@@ -24,7 +24,7 @@ def modify(root,path,edits):
     file.write_text(text,encoding="utf-8")
 
 def apply(root):
-    for name,dest in (("LocalLongctxPanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/")):
+    for name,dest in (("LocalLongctxPanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-ace-observer.ts","packages/compaction/compaction-basic/src/")):
         target=root/dest/name
         if target.exists():
             raise RuntimeError("overlay destination already exists")
@@ -37,14 +37,14 @@ def apply(root):
         ("  return (\n    <div className={styles['editor']}>","""  const local = localLongctxBridge()
   const useLocal = async (): Promise<void> => {
     if (!local || profileDisabled || listBusy || taken.includes('local-longctx')) return
-    if (!protocols.includes('openai-completions')) { setFailure('OpenAI completions protocol unavailable'); return }
+    if (!protocols.includes('anthropic-messages')) { setFailure('Anthropic Messages protocol unavailable'); return }
     setBusy(true)
     try {
       const c = await local.connection()
       setRoute('local-longctx')
       setDisplayName('Local-Longctx')
       setBaseURL(c.baseURL)
-      setProtocol('openai-completions')
+      setProtocol('anthropic-messages')
       setKeyDraft(c.key)
       setModels([{id:c.model,name:'Local-Longctx',contextWindow:c.context,maxTokens:c.output,input:['text']}])
       setFailure(undefined)
@@ -54,6 +54,26 @@ def apply(root):
   return (
     <div className={styles['editor']}>
       {local ? <button type="button" disabled={profileDisabled || listBusy || taken.includes('local-longctx')} onClick={()=>{void useLocal()}}>Local-Longctx 本地模型预设 / Local model preset</button> : null}""")])
+    modify(root,"packages/compaction/compaction-basic/src/index.ts",[
+        ("import { Context, Service } from '@deepseek-ai/cordis'","import { Context, Service } from '@deepseek-ai/cordis'\nimport { observeLocalAce } from './local-ace-observer.ts'"),
+        ("      case 'context-overflow': {","      case 'context-overflow': {\n        if (header.config.provider === 'local-longctx') return null"),
+        ("    if (measurement.totalTokens < spec.thresholdTokens) return null\n\n    // Once pressure qualifies","""    if (target.provider === 'local-longctx') {
+      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens)
+      const nodes = measurement.nodes
+      const start = range === null ? -1 : nodes.findIndex(node => node.seq === range.start)
+      const end = range === null ? -1 : nodes.findIndex(node => node.seq === range.end)
+      const rangeTokens = start >= 0 && end >= start ? nodes.slice(start,end+1).reduce((n,node)=>n+node.tokens,0) : 0
+      const action = await observeLocalAce(this.ctx,measurement.totalTokens,rangeTokens,signal)
+      this.ctx.logger.info('Local-Longctx ACE advisory: '+action)
+      // No automatic semantic rewrite until task metadata and consent are connected.
+      if (requireBelowThreshold && measurement.totalTokens >= spec.thresholdTokens) {
+        throw new Error('Local ACE requires explicit compaction or a larger verified native window')
+      }
+      return null
+    }
+    if (measurement.totalTokens < spec.thresholdTokens) return null
+
+    // Once pressure qualifies""")])
     modify(root,"apps/desktop/src/main.ts",[
         ("import { installFileActions } from './file-actions.ts'","import { installFileActions } from './file-actions.ts'\nimport { installLocalLongctx } from './local-longctx-ipc.ts'"),
         ("  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {","  installLocalLongctx(assertProductSender)\n  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {")])

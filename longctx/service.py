@@ -10,6 +10,8 @@ from .planner import prepare, RequestError
 from .backend import BackendError
 from .session_store import Store, Conflict
 from .managed import dispatch
+from .native_messages import prepare_native, validate_prompt, count_native
+from .harness_ace import assess
 
 MAX_BODY = 32 * 1024 * 1024
 
@@ -44,7 +46,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def error_json(self, status, message):
-        self.reply(status, {"error": {"message": message, "type": "local_longctx_error"}})
+        if self.path in ("/v1/messages","/v1/messages/count_tokens"):
+            kind = "authentication_error" if status == 401 else "rate_limit_error" if status == 429 else "invalid_request_error" if status < 500 else "api_error"
+            self.reply(status, {"type":"error","error":{"message":message,"type":kind}})
+        else:
+            self.reply(status, {"error": {"message": message, "type": "local_longctx_error"}})
 
     def authorized(self):
         # No CORS support, no access from browser origins, no reverse proxy trust.
@@ -52,7 +58,11 @@ class Handler(BaseHTTPRequestHandler):
             self.error_json(403, "loopback host required")
             return False
         supplied = self.headers.get("Authorization", "")
-        if not hmac.compare_digest(supplied.encode(), ("Bearer " + self.server.key).encode()):
+        native = self.path in ("/v1/messages","/v1/messages/count_tokens")
+        valid = hmac.compare_digest(supplied.encode(), ("Bearer " + self.server.key).encode())
+        if native and not supplied:
+            valid = hmac.compare_digest(self.headers.get("x-api-key","").encode(),self.server.key.encode())
+        if not valid:
             self.error_json(401, "authentication required")
             return False
         return True
@@ -85,7 +95,9 @@ class Handler(BaseHTTPRequestHandler):
         managed = self.path in ("/local/session/create","/local/session/read",
                                 "/local/session/append","/local/session/rollback","/local/session/compact")
         settings_preview = self.path == "/local/desktop/settings/preview"
-        if self.path != "/v1/chat/completions" and not managed and not settings_preview:
+        native = self.path in ("/v1/messages","/v1/messages/count_tokens")
+        ace_plan = self.path == "/local/ace/harness-plan"
+        if self.path != "/v1/chat/completions" and not managed and not settings_preview and not native and not ace_plan:
             self.error_json(404, "unknown endpoint")
             return
         if self.headers.get("Transfer-Encoding"):
@@ -114,6 +126,12 @@ class Handler(BaseHTTPRequestHandler):
         start = time.monotonic()
         plan = None
         try:
+            if ace_plan:
+                self.reply(200,assess(self.server.backend,self.server.config,body))
+                return
+            if native and self.path.endswith("/count_tokens"):
+                self.reply(200,{"input_tokens":count_native(self.server.backend,validate_prompt(body,self.server.config,True))})
+                return
             if settings_preview:
                 from .desktop_contract import preview
                 self.reply(200, preview(self.server.config, body))
@@ -124,8 +142,11 @@ class Handler(BaseHTTPRequestHandler):
                 payload=dispatch(self.server.sessions,self.server.backend,self.server.config,self.path,body)
                 self.reply(200,payload)
                 return
-            plan, outbound = prepare(body, self.server.config, self.server.backend)
-            conn, res = self.server.backend.request("/v1/chat/completions", outbound)
+            if native:
+                plan,outbound = prepare_native(body,self.server.config,self.server.backend)
+            else:
+                plan,outbound = prepare(body,self.server.config,self.server.backend)
+            conn, res = self.server.backend.request("/v1/messages" if native else "/v1/chat/completions", outbound)
             if res.status != 200:
                 self.error_json(502, "inference rejected by backend (HTTP %d)" % res.status)
                 return
@@ -160,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
         except RequestError as exc:
             self.error_json(400, str(exc))
         except (ValueError,KeyError,TypeError) as exc:
-            if managed or settings_preview:
+            if managed or settings_preview or ace_plan:
                 self.error_json(400,"local request rejected: "+str(exc))
             elif not started:
                 self.error_json(502,"invalid backend response")

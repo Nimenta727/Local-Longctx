@@ -39,6 +39,8 @@ class Backend:
         conn = http.client.HTTPConnection("127.0.0.1", self.config.backend_port,
                                           timeout=timeout or self.config.timeout)
         headers = {"Authorization": "Bearer " + self.key}
+        if path in ("/v1/messages","/v1/messages/count_tokens"):
+            headers["anthropic-version"]="2023-06-01"
         body = None
         if data is not None:
             headers["Content-Type"] = "application/json"

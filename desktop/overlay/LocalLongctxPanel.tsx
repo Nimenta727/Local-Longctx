@@ -57,6 +57,6 @@ export function LocalLongctxPanel() {
     <button type="button" disabled={busy||!['starting','ready'].includes(state.phase)} onClick={()=>void perform(()=>bridge.stop())}>停止 / Stop</button></div>
     {state.phase==='ready' ? <p>在下方添加自定义模型供应商，使用 Local-Longctx 预设。 / Add the Local-Longctx custom provider below.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
-    <p>Research preview: text only; native tool calling, automatic ACE and multimodal integration are not yet verified.</p>
+    <p>Research preview: native Messages tool transport; ACE advisory only. Tool execution, GPU inference and multimodal integration require validation.</p>
   </section>
 }

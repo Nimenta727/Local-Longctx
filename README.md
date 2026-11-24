@@ -33,3 +33,7 @@ OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --open
 ## V5 桌面产品路线
 
 正式桌面基础改为 DeepSeek Harness；FreeToken 仅作为 MoE 计算后端。新增 [锁定上游源码 overlay 与 GUI 模型设置预览](desktop/README.md)。保留上游工具及 MIT 归属；尚未验证本地工具调用、自动 ACE、完整品牌和安装包。V4 FreeToken Desktop 方案已被替代。见 [本次开发记录](docs/routine/2026-11-24-harness-studio.md)。
+
+## V5.1 Native tools / ACE / ACMA
+
+新增本地 Anthropic Messages 原生工具传输预览、Harness 压缩边界 ACE 只读接入及 CPU 分块注意力参考。当前不宣称工具执行、自动压缩或 GPU 加速已验证；详见 [技术接口与边界](docs/architecture/harness-native-ace.md) 和 [研发记录](docs/routine/2026-11-24-native-tools-ace-attention.md)。
