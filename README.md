@@ -2,7 +2,7 @@
 
 v0.2.0 · Apache-2.0 · NVIDIA MoE research preview
 
-唯一推理后端：FreeToken。自研 ACMA 长上下文管理、AHS 硬件调度和 ACE 自适应 Compact；可选复用 OpenClaw Control UI。V2.x 多后端设计废止。
+唯一推理后端：FreeToken。自研 ACMA 长上下文管理、AHS 硬件调度和 ACE 自适应 Compact；V4 目标复用 FreeToken Desktop 前端（源码授权尚待核实），旧 OpenClaw 启动器暂保留。V2.x 多后端设计废止。
 
 Python 3.10+；从 https://github.com/FlashML-org/FreeToken 获取可信本地 ft 与支持的 MoE GGUF，核实版本、GPU、模型窗口及许可证。复制 configs/example.json 为 configs/config.local.json，填写路径和核实过的兼容性标记。先小窗口试验：
 
@@ -25,3 +25,7 @@ OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --open
 见 [V3设计](docs/architecture/acma-v3.md) 与 [研发记录](docs/routine/2026-11-24-acma-ace.md)。未完成实际 GPU/OpenClaw 测试；不声称百万原生上下文已实现。第三方项目各自许可。
 
 [本次开发记录](docs/routine/2026-11-24-ace-managed.md)
+
+## V4 桌面路线
+
+[统一桌面架构与验收要求](docs/architecture/desktop-v4.md)。新增认证 API `GET /local/desktop/capabilities` 和 `POST /local/desktop/settings/preview`；只读能力/参数预览，不执行设置应用，不代表图形界面已改造。目标默认百万逻辑窗口，原生窗口独立核实。DeepSeek Harness 搜索、文件工具与多模态待集成。见 [研发记录](docs/routine/2026-11-24-desktop-v4.md)。

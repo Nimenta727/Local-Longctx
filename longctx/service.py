@@ -70,6 +70,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200 if status.get("status") == "ok" else 503, status)
             except (OSError, ValueError, http.client.HTTPException, BackendError):
                 self.error_json(503, "backend unavailable")
+        elif self.path == "/local/desktop/capabilities":
+            from .desktop_contract import describe
+            self.reply(200, describe(c))
         elif self.path == "/local/plan":
             from .config import memory_plan
             self.reply(200, memory_plan(c))
@@ -81,7 +84,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         managed = self.path in ("/local/session/create","/local/session/read",
                                 "/local/session/append","/local/session/rollback","/local/session/compact")
-        if self.path != "/v1/chat/completions" and not managed:
+        settings_preview = self.path == "/local/desktop/settings/preview"
+        if self.path != "/v1/chat/completions" and not managed and not settings_preview:
             self.error_json(404, "unknown endpoint")
             return
         if self.headers.get("Transfer-Encoding"):
@@ -110,6 +114,10 @@ class Handler(BaseHTTPRequestHandler):
         start = time.monotonic()
         plan = None
         try:
+            if settings_preview:
+                from .desktop_contract import preview
+                self.reply(200, preview(self.server.config, body))
+                return
             if managed:
                 if self.server.sessions is None:
                     self.server.sessions = Store(self.server.config.state_dir)
@@ -152,8 +160,8 @@ class Handler(BaseHTTPRequestHandler):
         except RequestError as exc:
             self.error_json(400, str(exc))
         except (ValueError,KeyError,TypeError) as exc:
-            if managed:
-                self.error_json(400,"managed request rejected: "+str(exc))
+            if managed or settings_preview:
+                self.error_json(400,"local request rejected: "+str(exc))
             elif not started:
                 self.error_json(502,"invalid backend response")
         except (OSError, http.client.HTTPException, BackendError, sqlite3.Error):
