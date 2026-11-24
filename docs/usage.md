@@ -6,7 +6,7 @@ Python 3.10+；NVIDIA Windows/Linux 目标平台；可信 FreeToken 程序和匹
 ## 2. 桌面 / Desktop
 按 [桌面说明 / Desktop instructions](../desktop/README.md) 准备上游源码。在模型设置选择引擎、GGUF、模型上限、原生窗口（先 8K）、输出预算、KV 精度、专家槽、线程和显存比例。启动后使用本地模型供应商预设。Prepare pinned sources; in Models choose the executable, GGUF, model limit, initial 8K native window, output reserve, KV dtype, expert slots, threads and VRAM ratio. Start and select the local provider preset. Existing provider credentials may need updating after restarting.
 
-Cache 面板显示原生缓存几何、当前容量、预算和吞吐量；空闲时经确认应用调整。Live Cache panel shows native geometry, capacity, budget and throughput; changes require an idle engine and confirmation. Live values are not saved across restart / 实时调整重启不保留。
+Cache 面板显示原生缓存几何、当前容量、预算和吞吐量；空闲时经确认应用调整。Live Cache panel shows native geometry, capacity, budget and throughput; changes require an idle engine and confirmation. 已确认的缓存容量会自动保存，启动时重新校验后恢复。 / Approved cache capacities are saved and revalidated on startup.
 
 ## 3. CLI（开发诊断 / Developer diagnostics）
 将 configs/example.json 复制为 configs/config.local.json；相对路径基于配置目录。修改路径、实际模型上限，只有确认兼容后才将 freetoken_model_verified 设为 true。Copy the example config, resolve paths relative to it and verify the installed engine/model before setting the compatibility flag.
@@ -21,7 +21,7 @@ python -m longctx --config configs/config.local.json serve
 默认本地 API 根为 http://127.0.0.1:18080；Messages 使用 /v1/messages，OpenAI 文本使用 /v1/chat/completions。密钥为 LOCAL_LONGCTX_API_KEY 或 CLI 随机生成的私有密钥；不得共享或提交。Default loopback base above; use Messages or plain-text Chat Completions, keep the session key private. Native text and tool transport is experimental, images unsupported.
 
 ## 4. ACE
-`python -m longctx compact-plan configs/compact.example.json` 离线测试决策，不启动 GPU、不修改对话。Offline policy evaluation without GPU or history mutation. Harness observer reads telemetry; the managed-session API is a separate explicit workflow. See [architecture](architecture.md).
+`python -m longctx compact-plan configs/compact.example.json` 离线测试决策，不启动 GPU、不修改对话。Offline policy evaluation without GPU or history mutation. 桌面选用 Local-Longctx 本地预设后自动管理会话上下文；以下受管会话操作适用于直接使用网关 API 的客户端。 / The desktop preset manages context automatically. The managed-session workflow below is for direct gateway clients. See [architecture](architecture.md).
 
 ## 5. 故障 / Troubleshooting
 - no eligible NVIDIA GPU: 检查驱动及空闲显存 / inspect driver and free VRAM.

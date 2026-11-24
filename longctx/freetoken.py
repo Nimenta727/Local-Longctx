@@ -30,7 +30,11 @@ class FreeTokenBackend(Backend):
         require_free(c.backend_port)
         c.state_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
         env={k:v for k,v in clean_env().items() if not k.startswith("FREETOKEN_")}
-        env.update({"FREETOKEN_API_KEY":self.key,"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1"})
+        cache = (c.state_dir / "runtime-cache").resolve()
+        cache.mkdir(exist_ok=True, mode=0o700)
+        env.update({"FREETOKEN_API_KEY":self.key,"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1",
+                    "XDG_CACHE_HOME":str(cache),"CUDA_CACHE_PATH":str(cache / "cuda"),
+                    "HF_HOME":str(cache / "huggingface"),"TORCH_HOME":str(cache / "torch")})
         self.log=(c.state_dir/"freetoken.log").open("ab")
         try:
             self.proc=subprocess.Popen(command(c,self.decision),env=env,stdout=self.log,

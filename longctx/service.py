@@ -28,6 +28,7 @@ class Server(ThreadingHTTPServer):
         self.config, self.backend, self.key = config, backend, key
         self.active = threading.Lock()
         self.sessions = None
+        self.cache_profile = "default"
         super().__init__(("127.0.0.1", config.api_port), Handler)
 
 class Handler(BaseHTTPRequestHandler):
@@ -91,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/local/cache/status":
             from .cache_control import snapshot
             try:
-                self.reply(200,snapshot(self.server.backend,c))
+                self.reply(200,dict(snapshot(self.server.backend,c), profile=self.server.cache_profile))
             except (OSError,ValueError,KeyError,TypeError,BackendError,http.client.HTTPException):
                 self.error_json(503,"native cache telemetry unavailable")
         elif self.path == "/local/plan":
@@ -141,7 +142,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if cache_apply:
                 from .cache_control import rebuild
-                self.reply(200,rebuild(self.server.backend,self.server.config,body))
+                from .cache_profile import save
+                result = rebuild(self.server.backend,self.server.config,body)
+                try:
+                    applied = {name: result["snapshot"]["pools"][name]["value"]
+                               for name in body["changes"]}
+                    save(self.server.backend,self.server.config,applied)
+                    self.server.cache_profile = "saved"
+                except (OSError, ValueError, TypeError):
+                    self.server.cache_profile = "unavailable"
+                self.reply(200,dict(result, profile=self.server.cache_profile))
                 return
             if ace_plan:
                 self.reply(200,assess(self.server.backend,self.server.config,body))

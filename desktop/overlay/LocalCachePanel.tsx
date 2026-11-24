@@ -1,8 +1,8 @@
 import {useEffect,useState} from 'react'
 
 type Pool={value:number;step:number;min:number;max:number;unit_bytes:number;adjustable:boolean}
-type Snapshot={revision:string;pools:Record<string,Pool>;budget_bytes:number;native_window:number;output_reserve:number;active_requests:number;completed:number;prefill_tps:number;decode_tps:number;ram_total_gib:number|null;ram_free_gib:number|null;vram_total_gib:number|null;vram_free_gib:number|null;kv_usage:{used_pages:number;total_pages:number}|null}
-export type CacheBridge={cacheStatus():Promise<Snapshot>;cacheApply(draft:{revision:string;changes:Record<string,number>}):Promise<{applied:boolean;snapshot:Snapshot}|null>}
+type Snapshot={profile?:string;revision:string;pools:Record<string,Pool>;budget_bytes:number;native_window:number;output_reserve:number;active_requests:number;completed:number;prefill_tps:number;decode_tps:number;ram_total_gib:number|null;ram_free_gib:number|null;vram_total_gib:number|null;vram_free_gib:number|null;kv_usage:{used_pages:number;total_pages:number}|null}
+export type CacheBridge={cacheStatus():Promise<Snapshot>;cacheApply(draft:{revision:string;changes:Record<string,number>}):Promise<{applied:boolean;snapshot:Snapshot;profile?:string}|null>}
 const labels:Record<string,string>={kv_tokens:'KV Cache · tokens',moe_experts:'MoE Expert Cache · slots',swa_tokens:'滑窗 / SWA · tokens',mamba_slots:'GDN state · slots'}
 const gib=(n:number)=> (n/1073741824).toFixed(2)
 export function CachePanel({bridge}:{bridge:CacheBridge}){
@@ -39,7 +39,7 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
   }
   const apply=async()=>{
     setBusy(true);setError('')
-    try{const r=await bridge.cacheApply({revision,changes:draft});if(r?.applied){setSnap(r.snapshot);setDraft({})}}
+    try{const r=await bridge.cacheApply({revision,changes:draft});if(r?.applied){setSnap({...r.snapshot,...r.profile===undefined?{}:{profile:r.profile}});setDraft({})}}
     catch(e){setError(String(e))}
     finally{setBusy(false)}
   }
@@ -60,6 +60,6 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
     <button type="button" disabled={busy||!changed} onClick={()=>setDraft({})}>重置 / Reset</button>
     <button type="button" disabled={busy||!changed||invalid||stale||!!error||snap.active_requests!==0||!snap.budget_bytes||total>snap.budget_bytes} onClick={()=>void apply()}>应用（空闲） / Apply idle</button>
     {stale?<p>缓存已变化，请重置。 / Cache changed; reset and re-plan.</p>:null}{error?<p role="alert">{error}</p>:null}
-    <p>实时调整为实验功能，重启不保留；可能使前缀缓存失效，不能扩大模型窗口。 / Experimental, not persisted; may invalidate prefixes and cannot extend the model window.</p>
+    <p>{snap.profile==='unavailable' ? '缓存方案未能保存或恢复 / Cache profile could not be saved or restored' : snap.profile==='restored' || snap.profile==='saved' ? '已保存缓存容量 / Cache capacities saved' : '使用启动配置 / Using startup cache capacities'}</p>
   </section>
 }

@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 from .config import Config
+from .cache_profile import restore
 from .backend import require_free
 from .freetoken import FreeTokenBackend
 from .hardware import detect
@@ -31,7 +32,11 @@ def run(path):
         backend.start(stop_event=stopped)
         if stopped.is_set():
             return 0
+        profile=restore(backend,c)
+        if stopped.is_set():
+            return 0
         server=Server(c,backend,key)
+        server.cache_profile=profile
         worker=threading.Thread(target=server.serve_forever,daemon=True)
         worker.start()
         while not stopped.wait(.25):

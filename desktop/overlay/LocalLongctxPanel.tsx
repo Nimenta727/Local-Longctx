@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import styles from './ModelsSection.module.css'
 import { CachePanel, type CacheBridge } from './LocalCachePanel.tsx'
 
-type State = { phase: string; model: string | null; engine: string | null; detail?: string }
+type Settings = {context:number;modelLimit:number;output:number;threads:number;ratio:number;dtype:string;kvTokens:number;expertSlots:number;prefill:number}
+type State = { phase: string; model: string | null; engine: string | null; detail?: string; settings?: Settings }
 type Bridge = CacheBridge & {
   status(): Promise<State>
   pick(kind: 'model' | 'engine'): Promise<State>
   start(settings: {context: number; modelLimit: number; output: number; threads: number; ratio: number; dtype: string; verified: boolean; kvTokens:number; expertSlots:number; prefill:number}): Promise<State>
   stop(): Promise<State>
+  openData(): Promise<void>
+  copyKey(): Promise<void>
   connection(): Promise<{model: string; baseURL: string; key: string; context: number; output: number}>
 }
 export function localLongctxBridge(): Bridge | undefined {
@@ -28,10 +31,20 @@ export function LocalLongctxPanel() {
   const [verified,setVerified] = useState(false)
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
+  const [copied,setCopied] = useState(false)
   useEffect(() => {
     if (!bridge) return
-    let live=true
-    const refresh=()=>{void bridge.status().then(s=>{if(live)setState(s)}).catch(()=>{})}
+    let live=true, loaded=false
+    const refresh=()=>{void bridge.status().then(s=>{
+      if(!live)return
+      setState(s)
+      if(!loaded&&s.settings){
+        const x=s.settings
+        setContext(x.context);setLimit(x.modelLimit);setOutput(x.output);setThreads(x.threads)
+        setRatio(x.ratio);setDtype(x.dtype);setKvTokens(x.kvTokens);setExpertSlots(x.expertSlots);setPrefill(x.prefill)
+      }
+      loaded=true
+    }).catch(()=>{})}
     refresh()
     const timer=window.setInterval(refresh,1500)
     return ()=>{live=false;window.clearInterval(timer)}
@@ -45,6 +58,7 @@ export function LocalLongctxPanel() {
   return <section className={styles['editor']} aria-label="Local-Longctx">
     <h3>Local-Longctx · 本地 MoE 模型</h3>
     <p>逻辑上下文目标 / Logical target: 1,000,000 tokens. 原生窗口仍需验证 / Native window requires validation.</p>
+    <button type="button" onClick={()=>{void bridge.openData().catch(e=>setError(String(e)))}}>打开本地数据目录 / Open local data folder</button>
     <p role="status">{state.phase}{state.detail ? ' — '+state.detail : ''}</p>
     <button type="button" disabled={locked} onClick={()=>{setVerified(false);void perform(()=>bridge.pick('engine'))}}>选择可信 FreeToken 程序 / Engine</button>
     <p>{state.engine ?? '未选择 / Not selected'}</p>
@@ -63,8 +77,11 @@ export function LocalLongctxPanel() {
     <div><button type="button" disabled={locked||!verified||!state.model||!state.engine} onClick={()=>void perform(()=>bridge.start({context,modelLimit:limit,output,threads,ratio,dtype,verified,kvTokens,expertSlots,prefill}))}>启动 / Start</button>
     <button type="button" disabled={busy||!['starting','ready'].includes(state.phase)} onClick={()=>void perform(()=>bridge.stop())}>停止 / Stop</button></div>
     {state.phase==='ready' ? <p>在下方添加自定义模型供应商，使用 Local-Longctx 预设。 / Add the Local-Longctx custom provider below.</p> : null}
-    {state.phase==='ready' ? <CachePanel bridge={bridge}/> : null}
+    {state.phase==='ready' ? <>
+      <button type="button" onClick={()=>{void bridge.copyKey().then(()=>setCopied(true)).catch(e=>setError(String(e)))}}>{copied?'已复制 / Copied':'复制本地 API 密钥 / Copy local API key'}</button>
+      <CachePanel bridge={bridge}/>
+    </> : null}
     {error ? <p role="alert">{error}</p> : null}
-    <p>研发预览：工具协议已接入，ACE 只读观察；工具执行、GPU 与多模态待验证。 / Research preview: Messages transport, advisory ACE; tools, GPU and multimodal unverified.</p>
+    <p>研发预览：工具协议已接入，本地会话自动管理上下文；工具执行、GPU 与多模态待验证。 / Research preview: Messages transport, automatic local session context management; tools, GPU and multimodal unverified.</p>
   </section>
 }

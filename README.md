@@ -1,6 +1,6 @@
 # Local-Longctx Studio
 
-**v0.3.0-alpha.2 · Source preview / 源码预发行 · Apache-2.0**
+**v0.3.0-alpha.3 · Source preview / 源码预发行 · Apache-2.0**
 
 本地 NVIDIA MoE AI 工作台：以 FreeToken 为唯一推理后端，以开源 Harness 为桌面及 Agent 基础，研发自适应长上下文管理。独立项目，非上游官方产品。
 
@@ -8,7 +8,7 @@ A local NVIDIA MoE AI workbench: FreeToken is the sole inference backend; open-s
 
 [中文使用指南 / English guide](docs/usage.md) · [架构 / Architecture](docs/architecture.md) · [测试 / Verification](docs/testing.md) · [发行 / Release](docs/release.md) · [研发记录 / Development log](docs/routine/README.md)
 
-[新版发行说明 / Release notes](RELEASE_NOTES.md) · [受管会话操作示例 / Managed session walkthrough](docs/usage.md#managed-sessions)
+[新版发行说明 / Release notes](RELEASE_NOTES.md) · [桌面本地数据 / Desktop local data](desktop/README.md)
 
 ## 核心能力 / Core capabilities
 
@@ -16,11 +16,11 @@ A local NVIDIA MoE AI workbench: FreeToken is the sole inference backend; open-s
 | --- | --- | --- |
 | FreeToken MoE、本地资源调度 AHS | FreeToken MoE and AHS resource planning | Source preview / 源码预览 |
 | Messages 工具协议、文本 API | Native Messages tool transport and text API | End-to-end unverified / 未完成联调 |
-| ACE 自适应压缩、历史归档及回滚 | ACE policy, managed history archive and rollback | Advisory / explicit commit / 观察与显式提交 |
+| ACE 自适应压缩、历史归档及回滚 | ACE policy, managed history archive and rollback | Automatic desktop checkpointing / 桌面自动管理 |
 | GUI 模型配置、KV/MoE/SWA/GDN 容量控制 | GUI model settings and native cache pools | Unbuilt overlay / 未构建覆盖层 |
 | 百万逻辑历史目标 | Million-token logical history target | Research target / 研发目标 |
 
-**边界 / Boundaries:** 尚未完成原生百万 Token、真实 GPU 性能、完整桌面编译、自动 ACE 闭环、多模态与完整工具执行验证。没有已验证的 Windows 安装包。模型窗口不等于 KV 容量。No verified native 1M, GPU performance, complete desktop build, automatic ACE transaction, multimodal or full tool execution. No verified Windows installer. Model window is not KV capacity.
+**边界 / Boundaries:** 尚未完成原生百万 Token、真实 GPU 性能、完整桌面运行、自动压缩实机、多模态与完整工具执行验证。没有已验证的 Windows 安装包。模型窗口不等于 KV 容量。No verified native 1M, GPU performance, desktop runtime, real-engine automatic compaction, multimodal or full tool execution. No verified Windows installer. Model window is not KV capacity.
 
 ## 快速开始 / Quick start
 

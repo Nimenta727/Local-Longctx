@@ -1,9 +1,9 @@
 /** Local-only development bridge. Never accepts executable paths or command lines from renderer. */
-import { app, dialog, ipcMain, type IpcMainInvokeEvent, type BrowserWindow } from 'electron'
+import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type BrowserWindow } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdir, writeFile, rename, stat } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { mkdir, readFile, writeFile, rename, stat, lstat } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 
 type Phase='idle'|'starting'|'ready'|'stopping'|'error'
 const PREFIX='local-longctx:'
@@ -19,11 +19,42 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
   let operation=false
   const root=process.env.LOCAL_LONGCTX_DEV_ROOT
   const python=process.env.LOCAL_LONGCTX_PYTHON
-  const status=()=>({phase,detail,model:model===null?null:basename(model),engine:engine===null?null:basename(engine)})
+  const stateDir=join(app.getPath('userData'),'local-longctx')
+  const config=join(stateDir,'config.json')
+  let settings:Record<string,unknown>|undefined
+  const restoreSettings=async()=>{
+    try {
+      const saved=JSON.parse(await readFile(config,'utf8')) as Record<string,unknown>
+      if(typeof saved.model==='string'&&saved.model.toLowerCase().endsWith('.gguf')&&await stat(saved.model).then(s=>s.isFile(),()=>false))model=saved.model
+      if(typeof saved.freetoken_server==='string'&&!/\.(bat|cmd|ps1|sh)$/i.test(saved.freetoken_server)&&await stat(saved.freetoken_server).then(s=>s.isFile(),()=>false))engine=saved.freetoken_server
+      if(typeof saved.context==='number'&&typeof saved.model_limit==='number'&&typeof saved.output_reserve==='number'&&typeof saved.threads==='number'&&typeof saved.freetoken_memory_ratio==='number'&&typeof saved.kv_cache_dtype==='string'&&typeof saved.kv_tokens==='number'&&typeof saved.expert_slots==='number'&&typeof saved.ubatch==='number'){
+        settings={context:saved.context,modelLimit:saved.model_limit,output:saved.output_reserve,threads:saved.threads,ratio:saved.freetoken_memory_ratio,dtype:saved.kv_cache_dtype,kvTokens:saved.kv_tokens,expertSlots:saved.expert_slots,prefill:saved.ubatch}
+      }
+    } catch(error) {
+      if(!(error instanceof Error&&'code' in error&&error.code==='ENOENT'))detail='Saved inference settings could not be read'
+    }
+  }
+  const restored=restoreSettings()
+  const profileKey=async()=>{
+    const path=join(stateDir,'gateway.key')
+    try{await writeFile(path,randomBytes(32).toString('hex'),{flag:'wx',mode:0o600})}
+    catch(error){if(!(error instanceof Error&&'code' in error&&error.code==='EEXIST'))throw error}
+    const info=await lstat(path)
+    if(!info.isFile()||(process.platform!=='win32'&&(info.mode&0o077)!==0))throw new Error('Unsafe local gateway key file')
+    const saved=await readFile(path,'utf8')
+    if(!/^[0-9a-f]{64}$/.test(saved))throw new Error('Invalid local gateway key file')
+    return saved
+  }
+  const status=()=>({phase,detail,settings,model:model===null?null:basename(model),engine:engine===null?null:basename(engine)})
   const ensureIdle=()=>{if(operation||child||['starting','ready','stopping'].includes(phase))throw new Error('Engine is busy')}
-  ipcMain.handle(PREFIX+'status',event=>{owner(event);return status()})
+  ipcMain.handle(PREFIX+'status',async event=>{owner(event);await restored;return status()})
+  ipcMain.handle(PREFIX+'open-data',async event=>{
+    owner(event)
+    const error=await shell.openPath(dirname(app.getPath('userData')))
+    if(error)throw new Error(error)
+  })
   ipcMain.handle(PREFIX+'pick',async(event,kind:unknown)=>{
-    const window=owner(event);ensureIdle()
+    const window=owner(event);await restored;ensureIdle()
     if(kind!=='model'&&kind!=='engine')throw new Error('Invalid file kind')
     operation=true
     try{
@@ -38,7 +69,7 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     }finally{operation=false}
   })
   ipcMain.handle(PREFIX+'start',async(event,raw:unknown)=>{
-    const window=owner(event);ensureIdle()
+    const window=owner(event);await restored;ensureIdle()
     if(app.isPackaged||!root||!python)throw new Error('Local-Longctx development runtime is not configured')
     if(!model||!engine||typeof raw!=='object'||raw===null)throw new Error('Select model and engine first')
     const s=raw as Record<string,unknown>
@@ -51,13 +82,12 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     try{
       const approved=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Start trusted local engine'],defaultId:0,cancelId:0,message:'Start selected executable?',detail:engine+'\n'+model})
       if(approved.response!==1)return status()
-      const stateDir=join(app.getPath('userData'),'local-longctx')
       await mkdir(stateDir,{recursive:true,mode:0o700})
-      const config=join(stateDir,'config.json')
       const body={freetoken_server:engine,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,context:ctx,model_limit:limit,logical_target:1000000,output_reserve:out,threads,ubatch:prefill,kv_tokens:kvTokens,expert_slots:expertSlots,freetoken_memory_ratio:s.ratio,kv_cache_dtype:s.dtype,state_dir:stateDir}
       await writeFile(config+'.tmp',JSON.stringify(body,null,2),{mode:0o600})
       await rename(config+'.tmp',config)
-      key=randomBytes(32).toString('hex');context=ctx;output=out
+      key=await profileKey();context=ctx;output=out
+      settings={context:ctx,modelLimit:limit,output:out,threads,ratio:s.ratio,dtype:s.dtype,kvTokens,expertSlots,prefill}
       phase='starting';detail=''
       const proc=spawn(python,['-m','longctx.desktop_worker',config],{cwd:root,shell:false,windowsHide:true,env:{...process.env,LOCAL_LONGCTX_API_KEY:key},stdio:['pipe','ignore','ignore']})
       child=proc
@@ -80,6 +110,11 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
       })()
       return status()
     }finally{operation=false}
+  })
+  ipcMain.handle(PREFIX+'copy-key',event=>{
+    owner(event)
+    if(phase!=='ready'||!key)throw new Error('Start engine first')
+    clipboard.writeText(key)
   })
   ipcMain.handle(PREFIX+'stop',event=>{owner(event);if(operation)throw new Error('Maintenance in progress');if(child){phase='stopping';child.stdin?.end()}return status()})
   ipcMain.handle(PREFIX+'connection',event=>{

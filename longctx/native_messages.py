@@ -116,5 +116,5 @@ def prepare_native(body,c,backend):
     try:
         check_budget(n,output,c.context,margin=256)
     except ValueError as exc:
-        raise RequestError(str(exc)) from exc
+        raise RequestError("maximum context window exceeded: " + str(exc)) from exc
     return Plan(n,output,c.context,"freetoken-native-messages"),dict(body)

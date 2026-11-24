@@ -1,5 +1,9 @@
 # 更新日志 / Changelog
 
+## 0.3.0-alpha.3 — 2026-11-25
+- 桌面自动压缩本地会话并召回归档。 / Automatic local session compaction and archival recall in the desktop app.
+- 保存并重新校验缓存容量，统一管理桌面本地数据。 / Persist and revalidate cache capacities and keep desktop data under one app directory.
+
 ## 0.3.0-alpha.2 — 2026-11-24
 - 保留任务状态及来源，支持成组保护文本工具记录。 / Preserve task state and source references, with optional protection for related tool messages.
 - 新增预算内归档检索，按会话版本链恢复原文。 / Retrieve archived excerpts within a token budget and the selected revision's history.

@@ -10,6 +10,7 @@ import time
 from dataclasses import asdict, replace
 from pathlib import Path
 from . import __version__
+from .cache_profile import restore
 from .config import Config, memory_plan
 from .backend import BackendError, require_free, clean_env
 from .compact import evaluate, Snapshot, Segment
@@ -30,6 +31,7 @@ def run(c):
     try:
         backend.start()
         server = Server(c, backend, key)
+        server.cache_profile = restore(backend, c)
         print(f"Local-Longctx API: http://127.0.0.1:{c.api_port} | native window / 原生窗口: {c.context}",flush=True)
         if "LOCAL_LONGCTX_API_KEY" not in os.environ:
             print("Session key / 会话密钥（请保密）: "+key,flush=True)

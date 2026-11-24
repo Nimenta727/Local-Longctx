@@ -24,11 +24,13 @@ def modify(root,path,edits):
     file.write_text(text,encoding="utf-8")
 
 def apply(root):
-    for name,dest in (("LocalLongctxPanel.tsx",CARD),("LocalCachePanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-ace-observer.ts","packages/compaction/compaction-basic/src/")):
+    for name,dest in (("LocalLongctxPanel.tsx",CARD),("LocalCachePanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-memory.ts","packages/compaction/compaction-basic/src/")):
         target=root/dest/name
         if target.exists():
             raise RuntimeError("overlay destination already exists")
         shutil.copyfile(ROOT/"overlay"/name,target)
+    shutil.copyfile(ROOT/"tests"/"local-memory.spec.ts",
+                    root/"packages/compaction/compaction-basic/tests/local-memory.spec.ts")
     modify(root,CARD+"ModelsSection.tsx",[
         ("import { useId, useState } from 'react'","import { useId, useState } from 'react'\nimport { LocalLongctxPanel } from './LocalLongctxPanel.tsx'"),
         ("return (\n    <div className={styles['section']}>","return (\n    <div className={styles['section']}>\n      <LocalLongctxPanel />")])
@@ -55,32 +57,76 @@ def apply(root):
     <div className={styles['editor']}>
       {local ? <button type="button" disabled={profileDisabled || listBusy || taken.includes('local-longctx')} onClick={()=>{void useLocal()}}>Local-Longctx 本地模型预设 / Local model preset</button> : null}""")])
     modify(root,"packages/compaction/compaction-basic/src/index.ts",[
-        ("import { Context, Service } from '@deepseek-ai/cordis'","import { Context, Service } from '@deepseek-ai/cordis'\nimport { observeLocalAce } from './local-ace-observer.ts'"),
-        ("      case 'context-overflow': {","      case 'context-overflow': {\n        if (header.config.provider === 'local-longctx') return null"),
-        ("    if (measurement.totalTokens < spec.thresholdTokens) return null\n\n    // Once pressure qualifies","""    if (target.provider === 'local-longctx') {
-      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens)
-      const nodes = measurement.nodes
-      const start = range === null ? -1 : nodes.findIndex(node => node.seq === range.start)
-      const end = range === null ? -1 : nodes.findIndex(node => node.seq === range.end)
-      const rangeTokens = start >= 0 && end >= start ? nodes.slice(start,end+1).reduce((n,node)=>n+node.tokens,0) : 0
-      const action = await observeLocalAce(this.ctx,measurement.totalTokens,rangeTokens,signal)
-      this.ctx.logger.info('Local-Longctx ACE advisory: '+action)
-      // No automatic semantic rewrite until task metadata and consent are connected.
-      if (requireBelowThreshold && measurement.totalTokens >= spec.thresholdTokens) {
-        throw new Error('Local ACE requires explicit compaction or a larger verified native window')
+        ("import { Context, Service } from '@deepseek-ai/cordis'","import { Context, Service } from '@deepseek-ai/cordis'\nimport { recallLocalMemory } from './local-memory.ts'"),
+        ("      { agent, signal },\n      next,","      { agent, signal, modelSelection, step },\n      next,"),
+        ("      return next()\n    })\n\n    ctx.on('agent/status'", """      const decision = await next()
+      if (decision.kind === 'reject' || signal.aborted || step !== 1
+        || modelSelection.provider !== 'local-longctx' || modelSelection.model !== 'local-longctx') return decision
+      try {
+        const info = await this.ctx.llm.resolveModelInfo(modelSelection.provider, modelSelection.model, signal)
+        const window = info.context?.contextWindow
+        if (window === undefined || this.ctx.tokenMeter.measure(agent.session).totalTokens
+          + (info.defaultMaxTokens ?? 0) + 1024 >= window * 0.8) return decision
+        const recalled = recallLocalMemory(agent.session, decision.messages)
+        return recalled === undefined ? decision : { ...decision, messages: [...decision.messages, recalled] }
+      } catch {
+        signal.throwIfAborted()
+        return decision
       }
-      return null
-    }
-    if (measurement.totalTokens < spec.thresholdTokens) return null
+    })
 
-    // Once pressure qualifies""")])
+    ctx.on('agent/status'"""),
+        ("        const range = selectCompactableRange(agent.session, measurement, 0)",
+         """        const retain = header.config.provider === 'local-longctx'
+          ? Math.ceil(measurement.totalTokens * 0.22) : 0
+        const range = selectCompactableRange(agent.session, measurement, retain)"""),
+        ("    const config = target === undefined\n      ? this.config","""    const routed = routedTarget(agent.session)
+    const local = [routed, target].find(route => route?.provider === 'local-longctx' && route.model === 'local-longctx')
+    if (local !== undefined) {
+      const info = await this.ctx.llm.resolveModelInfo(local.provider, local.model, signal)
+      const header = agent.session.requestHeader()
+      const reserve = header === undefined ? (info.defaultMaxTokens ?? 0) : reservedCompletionTokens(header, info.defaultMaxTokens)
+      const maxTokens = Math.max(1, Math.min(640, reserve || 640))
+      const summary = await summarizeWithLlm(this.ctx, {
+        summarizationProvider: local.provider, summarizationModel: local.model, maxTokens,
+      }, input, agent, local, signal)
+      return summary
+    }
+    const config = target === undefined
+      ? this.config"""),
+        ("    const policy = resolveTargetPolicy(this.config, target)\n    const meter", """    const policy = resolveTargetPolicy(this.config, target)
+    // The first step after switching routes prices the committed local request.
+    if (target.provider === 'local-longctx' && requireBelowThreshold
+      && routedTarget(agent.session)?.provider !== 'local-longctx') return null
+    const meter""")])
+    modify(root,"packages/compaction/compaction-basic/src/config.ts",[
+        ("policy.provider === target.provider && policy.model === target.model\n  ))",
+         """policy.provider === target.provider && policy.model === target.model
+  )) ?? (target.provider === 'local-longctx' && target.model === 'local-longctx' ? {
+    provider: target.provider, model: target.model, thresholdRatio: 0.8,
+    headroomTokens: 384, maxTokens: 640, retainRatio: 0.22, maxOverflowRetries: 1,
+  } satisfies ModelCompactPolicyConfig : undefined)""")])
+    modify(root,"packages/bundle/web-app/cordis.patch.yml",[
+        ("- id: system-prompt\n", """- id: session-log-deepseek
+  config:
+    enabled: false
+
+- id: session-telemetry-otel
+  config:
+    mode: DISABLED
+
+- id: system-prompt
+""")])
     modify(root,"apps/desktop/src/main.ts",[
         ("import { installFileActions } from './file-actions.ts'","import { installFileActions } from './file-actions.ts'\nimport { installLocalLongctx } from './local-longctx-ipc.ts'"),
+        ("app.setAppLogsPath()", "app.setAppLogsPath(join(app.getPath('userData'), 'logs'))"),
         ("  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {","  installLocalLongctx(assertProductSender)\n  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {")])
     modify(root,"apps/desktop/src/preload-app.ts",[
         ("markDocumentPlatform()","""if (location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame) {
   contextBridge.exposeInMainWorld('localLongctx', {
     status: () => ipcRenderer.invoke('local-longctx:status'),
+    openData: () => ipcRenderer.invoke('local-longctx:open-data'),
+    copyKey: () => ipcRenderer.invoke('local-longctx:copy-key'),
     pick: (kind: 'model' | 'engine') => ipcRenderer.invoke('local-longctx:pick', kind),
     start: (settings: unknown) => ipcRenderer.invoke('local-longctx:start', settings),
     stop: () => ipcRenderer.invoke('local-longctx:stop'),

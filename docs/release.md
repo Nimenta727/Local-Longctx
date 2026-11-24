@@ -1,13 +1,13 @@
 # 发行 / Release
 
-Version / 版本: **v0.3.0-alpha.2** (Python 0.3.0a2), source preview only / 仅源码预发行。
+Version / 版本: **v0.3.0-alpha.3** (Python 0.3.0a3), source preview only / 仅源码预发行。
 
 The main branch and release preparation branch contain the source; a branch is not a tag or published release. 主分支及预发行准备分支是源码，不等于 Git tag 或 GitHub Release。当前没有已验证安装包 / No verified binary.
 
 After cloning the exact release candidate, run `python scripts/check_release.py` in a clean checkout. Once tests pass and you have authorized GitHub CLI credentials, run:
 
 ```bash
-gh release create v0.3.0-alpha.2 --target "$(git rev-parse HEAD)" --prerelease --title "Local-Longctx Studio v0.3.0-alpha.2" --notes-file RELEASE_NOTES.md
+gh release create v0.3.0-alpha.3 --target "$(git rev-parse HEAD)" --prerelease --title "Local-Longctx Studio v0.3.0-alpha.3" --notes-file RELEASE_NOTES.md
 ```
 
 上面是 Bash 示例，先确认 HEAD 对应预发行准备分支的提交；不要从其他分支发布。This is a Bash example; verify HEAD is the intended candidate before publishing. GitHub generates source ZIP/tar.gz; no Windows installer should be attached until tested. GitHub 自动生成源码归档；未通过实机验收前不上传安装包。
