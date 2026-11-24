@@ -4,9 +4,12 @@ import hmac
 import http.client
 import json
 import threading
+import sqlite3
 import time
 from .planner import prepare, RequestError
 from .backend import BackendError
+from .session_store import Store, Conflict
+from .managed import dispatch
 
 MAX_BODY = 32 * 1024 * 1024
 
@@ -17,6 +20,7 @@ class Server(ThreadingHTTPServer):
     def __init__(self, config, backend, key):
         self.config, self.backend, self.key = config, backend, key
         self.active = threading.Lock()
+        self.sessions = None
         super().__init__(("127.0.0.1", config.api_port), Handler)
 
 class Handler(BaseHTTPRequestHandler):
@@ -75,7 +79,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.authorized():
             return
-        if self.path != "/v1/chat/completions":
+        managed = self.path in ("/local/session/create","/local/session/read",
+                                "/local/session/append","/local/session/rollback","/local/session/compact")
+        if self.path != "/v1/chat/completions" and not managed:
             self.error_json(404, "unknown endpoint")
             return
         if self.headers.get("Transfer-Encoding"):
@@ -104,6 +110,12 @@ class Handler(BaseHTTPRequestHandler):
         start = time.monotonic()
         plan = None
         try:
+            if managed:
+                if self.server.sessions is None:
+                    self.server.sessions = Store(self.server.config.state_dir)
+                payload=dispatch(self.server.sessions,self.server.backend,self.server.config,self.path,body)
+                self.reply(200,payload)
+                return
             plan, outbound = prepare(body, self.server.config, self.server.backend)
             conn, res = self.server.backend.request("/v1/chat/completions", outbound)
             if res.status != 200:
@@ -135,9 +147,16 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(line)
                 self.wfile.flush()
+        except Conflict as exc:
+            self.error_json(409,str(exc))
         except RequestError as exc:
             self.error_json(400, str(exc))
-        except (OSError, http.client.HTTPException, BackendError, ValueError):
+        except (ValueError,KeyError,TypeError) as exc:
+            if managed:
+                self.error_json(400,"managed request rejected: "+str(exc))
+            elif not started:
+                self.error_json(502,"invalid backend response")
+        except (OSError, http.client.HTTPException, BackendError, sqlite3.Error):
             if not started:
                 try:
                     self.error_json(502, "backend or client connection failed")

@@ -18,8 +18,10 @@ Python 3.10+；从 https://github.com/FlashML-org/FreeToken 获取可信本地 f
 
     python -m longctx compact-plan configs/compact.example.json
 
-ACE 依据 RAM、VRAM、增长率、KV 占用、重要性、访问频率、历史依赖与压缩/重放成本，返回决策和候选段 ID。精确模式及未经授权的语义压缩受保护。此命令仅分析输入快照，不修改历史、不执行模型摘要或迁移 KV。在线采样、执行、回滚尚待研发。
+ACE 依据 RAM、VRAM、增长率、KV 占用、重要性、访问频率、历史依赖与压缩/重放成本，返回决策和候选段 ID。精确模式及未经授权的语义压缩受保护。此命令仅分析输入快照，不修改历史、不执行模型摘要或迁移 KV。新增独立受管会话 API，支持只读 FreeToken 遥测、显式预览/提交的摘录式压缩、原文归档与回滚；普通聊天不改写。在线自动评分与 OpenClaw 接入仍待研发。详见 [受管会话接口](docs/architecture/ace-managed.md)。
 
 OpenClaw 可通过 openclaw-config 导出独立配置，或使用 desktop --openclaw /absolute/path/to/openclaw 试验启动器；暂未自有品牌发行。现有工具及插件默认禁用。
 
 见 [V3设计](docs/architecture/acma-v3.md) 与 [研发记录](docs/routine/2026-11-24-acma-ace.md)。未完成实际 GPU/OpenClaw 测试；不声称百万原生上下文已实现。第三方项目各自许可。
+
+[本次开发记录](docs/routine/2026-11-24-ace-managed.md)
