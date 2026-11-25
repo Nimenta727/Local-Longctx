@@ -45,4 +45,6 @@ jobs:
           (( executable_size >= 500000000 && executable_size < 2147483648 ))
           file "$executable" | grep 'PE32'
           tr -d '\r' < "$manifest" | sha256sum --check
-          gh release create "v$version" --target "$SOURCE_SHA" --draft --title "远栈 FarStack v$version · Windows" --notes "" "$executable" "$manifest"
+          draft_sha=$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish --jq 'select(.isDraft)|.targetCommitish')
+          test "$draft_sha" = "$SOURCE_SHA"
+          gh release upload "v$version" --repo "$GITHUB_REPOSITORY" "$executable" "$manifest"
