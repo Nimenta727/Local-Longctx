@@ -42,7 +42,7 @@ jobs:
           manifest="$executable.sha256"
           cd release-assets
           executable_size=$(stat -c %s "$executable")
-          test "$executable_size" -ge 500000000 && test "$executable_size" -lt 2147483648
+          (( executable_size >= 500000000 && executable_size < 2147483648 ))
           file "$executable" | grep 'PE32'
           tr -d '\r' < "$manifest" | sha256sum --check
           gh release create "v$version" --target "$SOURCE_SHA" --draft --title "远栈 FarStack v$version · Windows" --notes "" "$executable" "$manifest"
