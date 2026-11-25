@@ -1,31 +1,53 @@
 # 验证 / Verification
 
-## Core / 核心
+## 源码检查 / Source checks
+
+在仓库根目录运行以下命令。发行检查覆盖 Python 编译、单测和离线 ACE 规划。 / The source check covers Python compilation, unit tests, and offline ACE planning.
+
 ```bash
-python -m compileall -q longctx desktop benchmarks tests
-python -m unittest discover -s tests -v
-python -m longctx compact-plan configs/compact.example.json
+python scripts/check_release.py
+python -m benchmarks.context_baseline --output baseline.json
 ```
-测试覆盖配置、硬件决策、前缀身份、ACE 策略、受管会话、缓存预算、Messages 与版本一致性。Tests cover configuration, scheduling, prefix identity, ACE, managed sessions, cache budgets, Messages and release consistency. 新测试未在此次环境执行 / New tests were not executed in this environment.
 
-## Integration / 联调
-先安装锁定 Harness 依赖并运行 `python desktop/verify_build.py`，再实际启动桌面。On an NVIDIA machine, run an authenticated local engine and `python benchmarks/native_tool_smoke.py`; the script uses harmless echo data without executing real tools. Verify SSE, native tool pairing, GUI, process shutdown, cache apply and permission controls. 实机验证 SSE、工具结果配对、权限、GUI、退出与缓存重建。Do not input secrets into unaudited builds / 未审计版本不输入真实凭证。
+## 离线上下文回放 / Offline context replay
 
-## Release gate / 发行门槛
-Source preview must pass compile/unit tests before publishing. A stable desktop release also requires Windows/Linux GPU tests, full brand and upstream license audit, SBOM, installer signing and independent end-to-end checks. 源码预发行先通过编译和单测；桌面正式发行还需实机、品牌授权、SBOM、签名与端到端验收。No claimed test pass or 1M measurement / 不声称已通过未执行的测试或百万实测。
+固定用例覆盖早期约束、失败方案、工具记录、分散证据和跨语言改写。三个变体使用同一历史与末轮问题。受限变体共用预算，受管会话中有部分由调用方预先标记的任务状态。离线计数来自 UTF-8 字节估算。
 
-## Managed context replay / 受管上下文回放
+| 提示构造 / Prompt variant | 进入提示的关键证据 / Evidence included |
+| --- | ---: |
+| 完整历史 / Full history | 9/9 |
+| 滑动窗口 / Sliding window | 0/9 |
+| 受管会话 / Managed session | 9/9 |
 
-`tests/test_managed.py` 用同一份历史对比完整上下文、原摘录和任务状态加
-归档检索，验证早期约束、失败原因、工具错误记录的可见性及预算、回滚行为。
-离线用例采用模拟计数。
+受管会话在这组固定用例中从 8/9 提升至 9/9，新增命中是用英文恢复问题找回中文备份记录。该表反映 Python 受管会话的证据可见性。模型答对率、桌面端到端和 GPU 指标需要各自测量。 / This synthetic benchmark measures evidence visibility in managed-session prompts. Model quality, desktop flows, and GPU metrics have separate validation steps.
 
-实机可用 `python benchmarks/managed_replay.py replay.json`。输入 JSON 有
-`full`、`extract`、`recall` 三个消息数组，分别使用相同历史的完整版本、
-无任务状态的压缩预览和启用任务状态后由 recall API 返回的消息。三个变体
-使用同一条末轮问题，要求模型输出 JSON。另加 `expected` 对象，逐字段
-定义应遵守的约束、应跳过的失败方案和应找回的工具结果。脚本使用本地
-`LOCAL_LONGCTX_API_KEY`，报告逐字段准确性、首 Token 延迟和采样到的
-KV 页峰值。短请求可能采不到峰值。可用 `--order` 调整顺序，区分先后
-顺序带来的缓存影响。用 `--warm-prefix` 可在每个变体前发送完整历史前缀预热，
-用于测量历史重写后的首轮延迟。
+## Harness 源码回归 / Harness source regression
+
+按桌面指南固定上游 checkout 并安装依赖。从 `desktop/upstream` 运行核心测试。 / With the pinned overlay and dependencies prepared, run the focused suite from `desktop/upstream`.
+
+```bash
+pnpm exec vitest run \
+  apps/desktop/tests/local-longctx-ipc.spec.ts \
+  packages/compaction/compaction-basic/tests/compaction-basic.spec.ts \
+  packages/compaction/compaction-basic/tests/local-memory.spec.ts \
+  packages/spill/spill-policy/tests/spill-policy.spec.ts \
+  packages/spill/spill-policy/tests/local-tool-evidence.spec.ts \
+  packages/core/agent-loop/tests/loop.spec.ts
+```
+
+测试覆盖就绪进程归属、请求预算、会话压缩与回放、任务状态出处、跨语言召回、工具输出归档和回读。 / Tests cover worker readiness, prompt budgeting, durable checkpoints, recall, and tool-result spill.
+
+## NVIDIA 实机 / NVIDIA runtime
+
+启动网关并设置 `LOCAL_LONGCTX_API_KEY`，以实际网关窗口替换示例值。
+
+```bash
+python benchmarks/native_tool_smoke.py
+python -m benchmarks.context_baseline --live --engine-window 8192 --output live-baseline.json
+```
+
+工具冒烟脚本验证协议配对，使用无副作用的 echo 数据。实机基线使用原生 Messages 计数和生成，报告 JSON 字段准确性、首个文本 Token 延迟、引擎返回的用量和采样 KV 页峰值。超出实际窗口的完整历史会标记为跳过。短请求可能未采到峰值。比较时保持模型、量化、预算和历史规模一致。
+
+自备提示可用 `python benchmarks/managed_replay.py replay.json`。输入包含 `full`、`extract`、`recall` 三组消息和 `expected` 字段，支持 `--order` 和 `--warm-prefix`。
+
+桌面端到端验收还包括 Electron 启动、工具权限、空闲缓存重建、进程退出与重启恢复。 / Desktop validation still requires a full Electron run, tool permissions, idle cache rebuild, and restart recovery. [桌面构建 / Desktop build](../desktop/README.md)

@@ -8,17 +8,13 @@ import sqlite3
 import time
 from . import __version__
 from .planner import prepare, RequestError
-from .backend import BackendError
+from .backend import BackendError, parse_backend_object, reject_constant
 from .session_store import Store, Conflict
 from .managed import dispatch
 from .native_messages import prepare_native, validate_prompt, count_native
 from .harness_ace import assess
 
 MAX_BODY = 32 * 1024 * 1024
-
-def reject_constant(value):
-    """Reject NaN/Infinity / 拒绝非标准 JSON 数值。"""
-    raise ValueError("invalid JSON constant: "+value)
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
@@ -29,6 +25,7 @@ class Server(ThreadingHTTPServer):
         self.active = threading.Lock()
         self.sessions = None
         self.cache_profile = "default"
+        self.desktop_worker_pid = None
         super().__init__(("127.0.0.1", config.api_port), Handler)
 
 class Handler(BaseHTTPRequestHandler):
@@ -88,7 +85,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.error_json(503, "backend unavailable")
         elif self.path == "/local/desktop/capabilities":
             from .desktop_contract import describe
-            self.reply(200, describe(c))
+            payload = describe(c)
+            if self.server.desktop_worker_pid is not None:
+                payload["worker_pid"] = self.server.desktop_worker_pid
+            self.reply(200, payload)
         elif self.path == "/local/cache/status":
             from .cache_control import snapshot
             try:
@@ -186,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                 raw = res.read(64 * 1024 * 1024 + 1)
                 if len(raw) > 64 * 1024 * 1024:
                     raise BackendError("response too large")
-                payload = json.loads(raw)
+                payload = parse_backend_object(raw)
                 self.reply(200, payload)
                 return
             self.send_response(200)

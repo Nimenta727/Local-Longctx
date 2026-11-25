@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-longctx"
-version = "0.3.0a3"
+version = "0.3.0a4"
 description = "Local-Longctx Studio: experimental local MoE control plane"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,9 @@ longctx = "longctx.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["longctx*"]
+
+[tool.setuptools.package-data]
+longctx = ["recall_concepts.json"]
 
 [project.urls]
 Repository = "https://github.com/Nimenta727/Local-Longctx"

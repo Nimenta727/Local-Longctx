@@ -136,3 +136,67 @@ class ManagedTest(unittest.TestCase):
         self.assertEqual(evaluate(snapshot, [segment]).action, "keep")
         self.assertEqual(evaluate(replace(snapshot, context_tokens=9200), [segment]).action,
                          "propose_semantic_compact")
+
+    def test_concept_recall_rebuilds_old_index_and_prioritizes_literal_result(self):
+        history = [
+            {"role": "user", "content": "Store the report."},
+            {"role": "assistant", "content": (
+                "备份：archive-only-17\n"
+                "数据库恢复流程指定了此备份：snapshot-M61\n"
+                "Exact database restore error ERR_381: snapshot-N88"
+            )},
+        ]
+        original = self.store.create("upgrade", history, True)
+        self.store.commit("upgrade", 0, original["sha256"], [
+            history[0], {"role": "assistant", "content": "Archived report."},
+        ], "compact")
+        with self.store.connect() as db:
+            db.execute("CREATE TABLE archive_indexed (sid TEXT, rev INTEGER, PRIMARY KEY(sid,rev))")
+            db.execute("INSERT INTO archive_indexed VALUES ('upgrade', 1)")
+        _, hits = self.store.recall("upgrade", None, "Which backup restores the database?")
+        content = [hit["content"] for hit in hits]
+        self.assertTrue(any("snapshot-M61" in value for value in content))
+        self.assertFalse(any("archive-only-17" in value for value in content))
+        _, hits = self.store.recall("upgrade", None, "Database backup ERR_381")
+        self.assertIn("snapshot-N88", hits[0]["content"])
+
+    def test_concurrent_appends_keep_one_head_and_close_connections(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from sqlite3 import ProgrammingError
+        from threading import Barrier
+
+        start = Barrier(2)
+
+        def append(content):
+            start.wait(timeout=5)
+            try:
+                saved = self.store.commit("s", 0, self.old["sha256"],
+                                          self.messages + [{"role": "user", "content": content}],
+                                          "append")
+                return saved["revision"]
+            except Conflict:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            revisions = list(pool.map(append, ("first", "second")))
+        self.assertCountEqual(revisions, [1, None])
+        latest = self.store.read("s")
+        self.assertEqual(latest["revision"], latest["head"])
+        self.assertEqual(self.store.read("s", 0)["messages"], self.messages)
+        with self.assertRaisesRegex(ValueError, "invalid target revision"):
+            self.store.rollback("s", 1, latest["sha256"], None)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM revisions").fetchone()[0], 2)
+        with self.assertRaises(ProgrammingError):
+            db.execute("SELECT 1")
+
+    def test_exception_rolls_back_and_closes_session_connection(self):
+        from sqlite3 import ProgrammingError
+
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            with self.store.connect() as db:
+                db.execute("UPDATE heads SET rev=999 WHERE sid='s'")
+                raise RuntimeError("interrupted")
+        with self.assertRaises(ProgrammingError):
+            db.execute("SELECT 1")
+        self.assertEqual(self.store.read("s")["revision"], 0)

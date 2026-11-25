@@ -2,7 +2,7 @@
 import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type BrowserWindow } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdir, readFile, writeFile, rename, stat, lstat } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rename, rm, stat, lstat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 
 type Phase='idle'|'starting'|'ready'|'stopping'|'error'
@@ -84,24 +84,34 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
       if(approved.response!==1)return status()
       await mkdir(stateDir,{recursive:true,mode:0o700})
       const body={freetoken_server:engine,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,context:ctx,model_limit:limit,logical_target:1000000,output_reserve:out,threads,ubatch:prefill,kv_tokens:kvTokens,expert_slots:expertSlots,freetoken_memory_ratio:s.ratio,kv_cache_dtype:s.dtype,state_dir:stateDir}
-      await writeFile(config+'.tmp',JSON.stringify(body,null,2),{mode:0o600})
-      await rename(config+'.tmp',config)
-      key=await profileKey();context=ctx;output=out
+      const nextKey=await profileKey()
+      const draft=config+'.'+randomBytes(8).toString('hex')+'.tmp'
+      try{
+        await writeFile(draft,JSON.stringify(body,null,2),{flag:'wx',mode:0o600})
+        await rename(draft,config)
+      }finally{await rm(draft,{force:true})}
+      key=nextKey;context=ctx;output=out
       settings={context:ctx,modelLimit:limit,output:out,threads,ratio:s.ratio,dtype:s.dtype,kvTokens,expertSlots,prefill}
       phase='starting';detail=''
       const proc=spawn(python,['-m','longctx.desktop_worker',config],{cwd:root,shell:false,windowsHide:true,env:{...process.env,LOCAL_LONGCTX_API_KEY:key},stdio:['pipe','ignore','ignore']})
       child=proc
       proc.stdin?.on('error',()=>{})
       proc.once('error',()=>{if(child===proc){child=undefined;key='';phase='error';detail='Worker failed to start'}})
-      proc.once('exit',code=>{if(child===proc){child=undefined;key='';phase=phase==='stopping'?'idle':'error';detail=phase==='error'?'Worker exited ('+String(code)+'); inspect local logs':''}})
+      proc.once('exit',(code,signal)=>{
+        if(child!==proc)return
+        child=undefined;key=''
+        if(phase==='stopping'&&detail===''&&code===0){phase='idle';return}
+        phase='error'
+        if(!detail)detail='Worker exited ('+String(code??signal)+'); inspect local logs'
+      })
       void (async()=>{
         const deadline=Date.now()+1800000
         while(child===proc&&phase==='starting'&&Date.now()<deadline){
           try{
             const response=await fetch('http://127.0.0.1:18080/local/desktop/capabilities',{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(2000),redirect:'error'})
             if(response.ok){
-              const data=await response.json() as {context?:{configured_native_window?:number;output_reserve?:number}}
-              if(child===proc&&phase==='starting'&&data.context?.configured_native_window===ctx&&data.context.output_reserve===out){phase='ready';return}
+              const data=await response.json() as {worker_pid?:number;context?:{configured_native_window?:number;output_reserve?:number}}
+              if(child===proc&&phase==='starting'&&proc.pid!==undefined&&data.worker_pid===proc.pid&&data.context?.configured_native_window===ctx&&data.context.output_reserve===out){phase='ready';return}
             }
           }catch{ /* Startup polling only. */ }
           await new Promise(r=>setTimeout(r,1000))

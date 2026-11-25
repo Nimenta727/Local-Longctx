@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 from threading import Event, Thread
 
-from needle import stream_completion
+if __package__:
+    from .needle import stream_completion
+else:
+    from needle import stream_completion
 
 
 def sample_kv(port, stop, readings):

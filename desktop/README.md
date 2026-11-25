@@ -1,42 +1,58 @@
-# Local-Longctx Studio — 桌面源码预览 / Desktop source preview
+# 桌面开发预览 / Desktop development preview
 
-采用固定 DeepSeek Harness 源码覆盖层，不复制整套上游仓库，不删除原有工具、权限及沙箱。不是安装包。Pinned source overlay, not a bundled installer. Upstream tools, permission checks and sandbox remain intact.
+Local-Longctx Studio 将桌面界面、会话事务和工具权限交给固定版本的 DeepSeek Harness，通过本地网关调用 FreeToken。源码预发行需要自行准备构建环境。 [固定版本 / Pinned revision](harness.lock.json)
 
-## 开发准备 / Developer setup
-1. 核对 [harness.lock.json](harness.lock.json) 中固定修订及上游 MIT 许可 / Review the pinned revision and upstream MIT license.
-2. 执行 `python desktop/prepare_harness.py`。脚本不覆盖现有 checkout，锚点变化时停止 / Prepare a fresh checkout; stop on mismatched anchors.
-3. 安装上游要求的 Node.js ^24.22.3 或 >=26.13.1、pnpm 11.28.5，并按照上游说明安装锁定依赖与原生工具链 / Install upstream-required Node/pnpm and native dependencies following upstream instructions.
-4. 执行 `python desktop/verify_build.py`，然后 `python desktop/launch_dev.py` / Run build verification, then launch the development GUI. Do not use upstream publish targets / 不使用上游发行命令。
+## 构建和启动 / Build and launch
 
-## 设置 / Settings
-模型设置支持原生文件选择、窗口、输出、Prefill、KV 精度、专家缓存、线程、显存比例及启动停止；原生 Cache 面板支持空闲重建及预算估算。Model settings include file dialogs, window, output, prefill, dtype, expert cache, threads, VRAM ratio and start/stop; the native cache panel provides idle rebuild and budget estimate. Local provider uses Anthropic Messages at the gateway root / 本地供应商使用 Messages 协议。
+1. 安装 Python 3.10+、Node.js ^24.22.3 或 >=26.13.1、pnpm 11.28.5，并按固定 Harness 版本的说明准备原生构建依赖。本地推理需要可用的 NVIDIA GPU、匹配驱动、可信 FreeToken 和兼容 MoE GGUF。
+2. 在本仓库根目录执行下列命令。准备脚本会检出固定 Harness 版本并应用覆盖层，目标为 `desktop/upstream`。从旧版升级时，用新源码准备一份新的覆盖层。
 
-## 验证边界 / Verification boundaries
-尚未运行完整 TypeScript 构建、Electron 或真实 GPU 测试。工具传输存在，执行链未验证；自动压缩实机和多模态待验证。No complete TypeScript build, Electron run or real GPU test verified. Tool transport exists; execution is unverified; end-to-end automatic compaction and multimodal remain unverified. Rebranding is partial: raster icons, installer identity, links, login and updater/telemetry require audit / 品牌、安装包、登录、更新与遥测仍需审计。不要运行上游发布脚本，不在未审计版本输入真实凭证 / Do not run upstream publishing scripts or enter real credentials before audit. Retain MIT notices / 保留 MIT 声明。
+```bash
+python desktop/prepare_harness.py
+cd desktop/upstream
+pnpm install --frozen-lockfile
+cd ../..
+python desktop/verify_build.py
+python desktop/launch_dev.py
+```
 
-## 本地数据与自动记忆 / Local data and automatic context
+Install the pinned dependencies, materialize the overlay, verify the build, and launch the development desktop. The launcher uses `desktop/upstream`. A fresh overlay is needed when upgrading.
 
-用 `python desktop/launch_dev.py` 启动开发桌面。模型设置中的「打开本地数据目录」
-可以查看应用管理的会话、附件、设置、日志和运行时缓存。默认目录为 Windows
-`%LOCALAPPDATA%/Local-Longctx`、macOS `~/Library/Application Support/Local-Longctx`、
-Linux `${XDG_DATA_HOME:-$HOME/.local/share}/Local-Longctx`。旧工作区里已有
-Studio 数据时，继续使用旧目录。也可以在启动前设置 `LOCAL_LONGCTX_DATA_DIR`
-来选择一个独立目录。备份或迁移前先关闭桌面和推理服务，再复制整个数据目录。模型权重、FreeToken 程序和
-项目文件使用你选择的路径。
+## 选择模型 / Choose a model
 
-会话原文和压缩检查点存入本地会话历史。选用 Local-Longctx 预设后，应用会在历史
-接近窗口时调用同一个本地模型压缩较早的内容，并在新一轮有余量时从该会话归档
-自动找回相关原文。桌面使用无需自行请求受管会话 API。归档召回局限于当前会话。
-桌面配置关闭 Harness 的自动会话日志上传和会话遥测。
+1. 在模型设置中选择 FreeToken 可执行文件和 GGUF。填写已核实的模型上限、原生窗口和输出预留。可从 8,192 Token 起步，容量以模型和显卡能实际支持的范围为准。
+2. 确认来源与兼容性后启动引擎。等待状态显示就绪，然后在自定义供应商里使用 **Local-Longctx 本地模型预设**，并在会话中选中它。
+3. 若旧供应商仍使用临时密钥，在本地引擎就绪后点击「复制本地 API 密钥」，更新该供应商一次。当前数据目录会保存网关密钥。
 
-Cache 面板中确认的容量会按模型、引擎文件、GPU 和启动配置保存。重启时用当前
-原生缓存预算重新校验，恢复失败会在面板显示。保存的是 KV、MoE、SWA 和 GDN
-容量方案。推理中的 KV 张量由 FreeToken 在运行时管理，经重启重新预填。
+Select the executable and GGUF, verify compatibility, and start the engine. Then configure and select the Local-Longctx preset. Update an old temporary provider key once if needed.
 
-以前创建的本地供应商可能使用旧的临时密钥。首次升级后启动引擎，使用「复制本地
-API 密钥」更新该供应商一次。之后本地网关会沿用当前数据目录保存的密钥。
+## 会话、工具输出和缓存 / Context, tool output, and cache
 
-The launcher owns a persistent desktop profile. Select the Local-Longctx preset
-for automatic local compaction and within-session recall. The cache panel saves
-approved capacities and revalidates them at startup. Live KV tensors are rebuilt
-by the engine. Model weights and project files remain at their selected paths.
+- 每轮发送前，Harness 会估算当前历史、新消息、系统提示增量、工具定义和输出预留。临近阈值时先处理可缩减的工具结果，再尝试压缩历史。FreeToken 对最终的原生 Messages 请求计数，超限时网关会列出输入、输出、安全余量和窗口。
+- 本地压缩生成检查点，并尝试保留原文中的约束、决策、失败原因和待办，以及对应的会话事件序号。后续轮次有余量时，应用先匹配文件名、错误码等字面线索，再用本地中英术语表补充召回。检索范围是当前会话，词表之外的改写可能漏检。
+- 大型纯文本工具结果可保存到会话所属的本地文件。模型看到首尾、预算内的原始错误行和读取路径。以 8K 窗口为例，单份预览的估算上限为 1,024 Token。
+- Cache 面板显示 KV、MoE、SWA 和 GDN 容量。空闲时确认重建，应用会保存引擎实际分配的容量。重启时重新核对容量和预算。配置损坏时可重新应用容量设置，推理中的缓存张量会随引擎重建。
+
+The local preset budgets each request, preserves source-linked task excerpts, and recalls evidence from the current session. Large tool results can be read from their local spill path. The Cache panel persists approved capacities and checks them against actual allocation after restart. FreeToken rebuilds live cache tensors.
+
+## 数据位置与升级 / Data and upgrades
+
+模型设置中的「打开本地数据目录」可定位会话、附件、设置、日志和运行时缓存。默认目录如下。
+
+| 平台 / Platform | 路径 / Path |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%/Local-Longctx` |
+| Linux | `${XDG_DATA_HOME:-$HOME/.local/share}/Local-Longctx` |
+| macOS | `~/Library/Application Support/Local-Longctx` |
+
+旧 Studio 数据若还在当前源码 checkout 中，启动器会继续使用它。换到新 checkout 时，可以在启动前将 `LOCAL_LONGCTX_DATA_DIR` 指向旧目录或其完整副本。备份和迁移前先关闭桌面与推理服务。模型权重、FreeToken 程序和项目文件仍使用所选路径。桌面配置默认关闭会话日志上传和会话遥测。
+
+Open the app data directory from model settings. Close the desktop and engine before copying it for backup or migration. Set `LOCAL_LONGCTX_DATA_DIR` before launch to select an existing profile or its copy.
+
+## 排错 / Troubleshooting
+
+- **启动失败或超时**。在数据目录查看 `desktop-worker.log` 和 `freetoken.log`，检查引擎文件、模型兼容性、显卡资源和端口。
+- **缓存方案不可用**。确认模型、引擎、GPU 和启动参数，按当前原生预算重新应用。
+- **上下文超限**。查看错误中的实际计数，缩短输入或调整输出预留。先核实模型与显存容量，再增大原生窗口。
+
+完整 Electron 运行和 NVIDIA 端到端验收仍待完成。 / Full Electron and NVIDIA end-to-end validation remains pending. [验证范围 / Verification](../docs/testing.md)

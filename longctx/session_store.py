@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from .archive import search
@@ -42,10 +43,15 @@ class Store:
         if os.name!="nt":
             os.chmod(self.path,0o600)
 
+    @contextmanager
     def connect(self):
-        db=sqlite3.connect(self.path,timeout=5)
-        db.execute("PRAGMA synchronous=FULL")
-        return db
+        db = sqlite3.connect(self.path, timeout=5)
+        try:
+            db.execute("PRAGMA synchronous=FULL")
+            with db:
+                yield db
+        finally:
+            db.close()
 
     @staticmethod
     def check_id(sid):
@@ -54,20 +60,23 @@ class Store:
 
     def _read(self,db,sid,revision=None):
         self.check_id(sid)
-        head=db.execute("SELECT rev,semantic FROM heads WHERE sid=?",(sid,)).fetchone()
-        if head is None:
-            raise ValueError("unknown session")
-        rev=head[0] if revision is None else revision
-        if type(rev) is not int or rev<0:
+        if revision is not None and (type(revision) is not int or revision < 0):
             raise ValueError("invalid revision")
-        row=db.execute("SELECT body,sha,action FROM revisions WHERE sid=? AND rev=?",(sid,rev)).fetchone()
+        row = db.execute(
+            "SELECT h.rev, h.semantic, r.rev, r.body, r.sha, r.action "
+            "FROM heads h LEFT JOIN revisions r ON r.sid=h.sid AND r.rev=COALESCE(?,h.rev) "
+            "WHERE h.sid=?", (revision, sid),
+        ).fetchone()
         if row is None:
+            raise ValueError("unknown session")
+        head, semantic, rev, body, sha, action = row
+        if rev is None:
             raise ValueError("unknown revision")
-        messages=validate_messages(json.loads(row[0]))
-        if digest(messages)!=row[1]:
+        messages = validate_messages(json.loads(body))
+        if digest(messages) != sha:
             raise ValueError("archive checksum mismatch")
-        return {"session":sid,"revision":rev,"head":head[0],"sha256":row[1],
-                "allow_semantic":bool(head[1]),"messages":messages,"action":row[2]}
+        return {"session": sid, "revision": rev, "head": head, "sha256": sha,
+                "allow_semantic": bool(semantic), "messages": messages, "action": action}
 
     def read(self,sid,revision=None):
         with self.connect() as db:
@@ -90,11 +99,11 @@ class Store:
         self.check_id(sid)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("CREATE TABLE IF NOT EXISTS archive_indexed "
+            db.execute("CREATE TABLE IF NOT EXISTS archive_indexed_v2 "
                        "(sid TEXT, rev INTEGER, PRIMARY KEY(sid,rev))")
-            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS archive_search USING "
+            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS archive_search_v2 USING "
                        "fts5(sid UNINDEXED, revision UNINDEXED, source_revision UNINDEXED, "
-                       "message_index UNINDEXED, start UNINDEXED, stop UNINDEXED, words)")
+                       "message_index UNINDEXED, start UNINDEXED, stop UNINDEXED, words, concepts)")
             snapshot = self._read(db, sid, revision)
             hits = search(db, sid, snapshot["revision"], query,
                           lambda session, rev: self._read(db, session, rev))
@@ -121,6 +130,10 @@ class Store:
             return self._read(db,sid)
 
     def rollback(self,sid,expected_revision,expected_sha,target):
+        if type(target) is not int or target < 0:
+            raise ValueError("invalid target revision")
+        if type(expected_revision) is not int:
+            raise ValueError("expected revision and SHA required")
         old=self.read(sid,target)
         if old["revision"]>expected_revision:
             raise ValueError("cannot restore future revision")

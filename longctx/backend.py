@@ -11,6 +11,20 @@ from pathlib import Path
 class BackendError(RuntimeError):
     pass
 
+def reject_constant(value):
+    raise ValueError("invalid JSON constant: " + value)
+
+
+def parse_backend_object(raw):
+    try:
+        payload = json.loads(raw, parse_constant=reject_constant)
+    except (ValueError, RecursionError) as exc:
+        raise BackendError("invalid backend JSON response") from exc
+    if not isinstance(payload, dict):
+        raise BackendError("backend JSON response must be an object")
+    return payload
+
+
 def require_free(port):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", port))
@@ -60,7 +74,7 @@ class Backend:
             raw = res.read(64 * 1024 * 1024 + 1)
             if len(raw) > 64 * 1024 * 1024:
                 raise BackendError("backend response too large")
-            return json.loads(raw)
+            return parse_backend_object(raw)
         finally:
             conn.close()
 

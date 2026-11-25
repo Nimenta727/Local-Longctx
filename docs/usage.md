@@ -1,15 +1,14 @@
-# 使用指南 / User guide
+# CLI 与 API 指南 / CLI and API guide
 
-## 1. 环境 / Requirements
-Python 3.10+；NVIDIA Windows/Linux 目标平台；可信 FreeToken 程序和匹配的 MoE GGUF。硬件、驱动和模型兼容性参见 [FreeToken 官方项目 / upstream](https://github.com/FlashML-org/FreeToken)。当前不是已验证的跨平台产品。Python 3.10+, NVIDIA Windows/Linux target, trusted FreeToken and compatible MoE GGUF. Check upstream compatibility. Cross-platform operation is unverified.
+桌面用户可以直接使用 Local-Longctx 模型预设。以下命令适用于独立运行网关和编写 API 客户端。 / Use the desktop preset for automatic context management, or follow this guide to run the gateway and build a direct API client. [桌面指南 / Desktop guide](../desktop/README.md)
 
-## 2. 桌面 / Desktop
-按 [桌面说明 / Desktop instructions](../desktop/README.md) 准备上游源码。在模型设置选择引擎、GGUF、模型上限、原生窗口（先 8K）、输出预算、KV 精度、专家槽、线程和显存比例。启动后使用本地模型供应商预设。Prepare pinned sources; in Models choose the executable, GGUF, model limit, initial 8K native window, output reserve, KV dtype, expert slots, threads and VRAM ratio. Start and select the local provider preset. Existing provider credentials may need updating after restarting.
+## 启动本地网关 / Start the local gateway
 
-Cache 面板显示原生缓存几何、当前容量、预算和吞吐量；空闲时经确认应用调整。Live Cache panel shows native geometry, capacity, budget and throughput; changes require an idle engine and confirmation. 已确认的缓存容量会自动保存，启动时重新校验后恢复。 / Approved cache capacities are saved and revalidated on startup.
+1. 准备 Python 3.10+、匹配的 NVIDIA 驱动、可信 FreeToken 和兼容 MoE GGUF。
+2. 复制 `configs/example.json` 为 `configs/config.local.json`。设置 FreeToken 和模型路径、已核实的模型上限与窗口预算。相对路径从配置文件目录解析。确认兼容后再把 `freetoken_model_verified` 设为 `true`。
+3. 在启动网关的终端设置私有的 `LOCAL_LONGCTX_API_KEY`，再运行下列命令。
 
-## 3. CLI（开发诊断 / Developer diagnostics）
-将 configs/example.json 复制为 configs/config.local.json；相对路径基于配置目录。修改路径、实际模型上限，只有确认兼容后才将 freetoken_model_verified 设为 true。Copy the example config, resolve paths relative to it and verify the installed engine/model before setting the compatibility flag.
+Prepare the engine and model, copy the example configuration, and set a private key in the gateway's environment. If no key is set, the CLI generates one and prints it locally.
 
 ```bash
 python -m longctx --config configs/config.local.json hardware
@@ -18,48 +17,27 @@ python -m longctx --config configs/config.local.json doctor
 python -m longctx --config configs/config.local.json serve
 ```
 
-默认本地 API 根为 http://127.0.0.1:18080；Messages 使用 /v1/messages，OpenAI 文本使用 /v1/chat/completions。密钥为 LOCAL_LONGCTX_API_KEY 或 CLI 随机生成的私有密钥；不得共享或提交。Default loopback base above; use Messages or plain-text Chat Completions, keep the session key private. Native text and tool transport is experimental, images unsupported.
+## 接口与故障排查 / Endpoints and troubleshooting
 
-## 4. ACE
-`python -m longctx compact-plan configs/compact.example.json` 离线测试决策，不启动 GPU、不修改对话。Offline policy evaluation without GPU or history mutation. 桌面选用 Local-Longctx 本地预设后自动管理会话上下文；以下受管会话操作适用于直接使用网关 API 的客户端。 / The desktop preset manages context automatically. The managed-session workflow below is for direct gateway clients. See [architecture](architecture.md).
+默认地址为 `http://127.0.0.1:18080`，请求使用 Bearer 鉴权。
 
-## 5. 故障 / Troubleshooting
-- no eligible NVIDIA GPU: 检查驱动及空闲显存 / inspect driver and free VRAM.
-- insufficient RAM: 保守预算未通过，尝试较小模型 / choose a smaller compatible model.
-- missing_flags: 当前引擎 CLI 不匹配 / inspect installed FreeToken version.
-- context budget exceeded: 缩短输入，检查真实模型和缓存容量 / reduce input and verify window and pools.
-- worker exited: 查看本地 desktop-worker.log 与 freetoken.log，分享前去除隐私信息 / inspect local logs and redact before sharing.
+| 接口 / Endpoint | 用途 / Purpose |
+| --- | --- |
+| `GET /health` | 引擎健康状态 / Engine health |
+| `POST /v1/messages` | 原生文本与工具协议 / Native text and tool transport |
+| `POST /v1/messages/count_tokens` | 原生提示计数 / Native prompt count |
+| `POST /v1/chat/completions` | OpenAI 风格的文本请求 / OpenAI-style text requests |
+| `GET /local/cache/status` | 当前缓存容量及原生遥测 / Current cache capacities and telemetry |
 
-## 受管会话的任务状态与归档检索
+超限错误会列出输入、输出、安全余量和窗口。显卡或内存不足时先用较小的兼容模型或窗口复查 `plan`。若 `doctor` 报告 `missing_flags`，检查已安装的 FreeToken 版本。启动失败时查看状态目录的 `freetoken.log`。 / Use the reported token breakdown to diagnose overflow. Check the plan and installed engine flags if startup fails.
 
-继续用 `POST /local/session/compact` 预览和显式提交。每个候选段可加
-`"task_state": [{"kind":"failed_attempt","quote":"Rejected v2 migration"}]`。
-类别包括 `constraint`、`decision`、`failed_attempt` 和 `todo`。
-`quote` 由调用方提供，必须命中该段中的一行原文。压缩保留整行，并附
-`revision:index` 来源。预算放不下标记和必保行时，预览报错并保留原版本。
-原有的 system、user 和末尾四条消息保护继续适用。对于已经作为纯文本存入
-受管会话的工具调用和结果，可传 `"protected_groups": [[3, 4]]`，
-把这一组原样保留。原生 Messages 的结构化工具内容仍由 Harness 管理。
+## 受管会话行为 / Managed-session behavior
 
-提交后可用以下请求准备下一轮：
+受管会话支持纯文本消息。压缩需要创建时授权，并显式预览、提交。可以在候选助手消息中用 `task_state` 标记原文的约束、决策、失败原因和待办。系统消息、用户消息、末尾四条消息与显式保护组会保留。对纯文本工具记录，可用 `"protected_groups": [[3, 4]]` 标出成组消息。
 
-```http
-POST /local/session/recall
-Content-Type: application/json
+召回需要 SQLite FTS5。索引按需从原文构建，先匹配字面词，再补充本地中英工程概念。结果只来自所选版本的历史链。旧版本数据库未记录确切回滚目标时，召回可能在该点停止。指定版本仍可读取原文。响应里的 `sources` 给出原版本、消息索引和字符范围 `[start,end)`。召回只组装下一轮输入，调用方可另行追加实际问题和回复。
 
-{"session":"demo","query":"What returned ERR_381 in decode_cache.py?","max_recall_tokens":384}
-```
-
-默认使用当前版本，也可指定 `revision`。返回的 `messages` 可提交给
-`/v1/chat/completions`。搜索结果作为引用资料附在末尾的新用户消息里，
-已有消息保持原样。返回的 `sources` 标明原版本、消息索引和字符范围
-`[start,end)`。检索预算使用后端提示计数，且受上下文上限和输出预留约束。
-这个准备请求不追加会话消息。完成推理后，可用返回的版本和 SHA 追加实际
-用户请求及模型回复。
-
-SQLite 需支持 FTS5。首次检索按需为已有压缩版本建立索引。检索沿恢复后的
-版本链进行。对于升级前创建、且数据库未记录确切回滚目标的回滚点，
-检索可能在该点停止。原文仍可通过指定版本读取。
+Direct clients use explicit compaction consent and commits. The recall endpoint returns a prompt and source ranges without adding a new session revision. SQLite FTS5 is required for retrieval. [架构 / Architecture](architecture.md)
 
 <a id="managed-sessions"></a>
 

@@ -42,3 +42,27 @@ describe('local archival recall', () => {
     expect(recallLocalMemory(session, [])).toBeUndefined()
   })
 })
+
+it('recalls cross-language evidence and ignores a single-concept decoy', () => {
+  const user = (text: string) => createUserMessage({
+    source: { kind: 'user' }, content: [{ type: 'text', text }],
+  })
+  const output = (text: string) => ({
+    type: 'tool/result', surfaceOp: 'append', data: { message: { content: [{ type: 'text', text }] } },
+  })
+  const events = new Map<number, unknown>([
+    [0, output('数据库恢复流程指定了此备份：snapshot-M61')],
+    [1, output('备份：archive-only-17')],
+    [2, { type: 'compaction/summary' }],
+    [3, { type: 'user/message', data: user('Checkpoint'), surfaceOp: { op: 'replace' }, sourceEventSeqs: [0, 1, 2] }],
+  ])
+  const session = {
+    surface: { nodes: [SessionSeq(3)] },
+    eventAt: (seq: number) => events.get(seq),
+  } as unknown as Session
+  const result = recallLocalMemory(session, [user('Which backup should I use to bring the database back?')])
+  const text = JSON.stringify(result)
+  expect(text).toContain('snapshot-M61')
+  expect(text).not.toContain('archive-only-17')
+  expect(text).toContain('"seq')
+})

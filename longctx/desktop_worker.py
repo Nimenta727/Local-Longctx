@@ -37,6 +37,7 @@ def run(path):
             return 0
         server=Server(c,backend,key)
         server.cache_profile=profile
+        server.desktop_worker_pid=os.getpid()
         worker=threading.Thread(target=server.serve_forever,daemon=True)
         worker.start()
         while not stopped.wait(.25):

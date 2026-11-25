@@ -1,0 +1,14 @@
+{
+  "database": ["\\b(?:database|databases|db)\\b", "数据库|資料庫"],
+  "recovery": ["\\b(?:recover(?:y|ed|ing)?|restor(?:e|ed|ing|ation)|(?:bring|get)\\b[^.!?\\n]{0,48}\\bback)\\b", "恢复|復原|还原|還原|恢复流程"],
+  "backup": ["\\b(?:backups?|snapshots?|backup copies)\\b", "备份|備份|快照"],
+  "compatibility": ["\\b(?:compatib(?:le|ility)|backward compatibility|legacy clients?)\\b", "兼容|相容|旧客户端|舊客戶端"],
+  "deployment": ["\\b(?:deploy(?:ment|ed|ing)?|rollouts?|releases?)\\b", "部署|上线|上線|发布|發佈"],
+  "rollback": ["\\b(?:rollbacks?|roll(?:ing)? back|revert(?:ed|ing)?)\\b", "回滚|回滾|回退"],
+  "failure": ["\\b(?:errors?|fail(?:ed|ure|ures)|exceptions?|crashes?)\\b", "错误|錯誤|失败|失敗|异常|異常|崩溃"],
+  "verification": ["\\b(?:verif(?:y|ied|ication)|validat(?:e|ed|ion)|tests?)\\b", "验证|驗證|校验|校驗|测试|測試"],
+  "permissions": ["\\b(?:permissions?|access control|authorization)\\b", "权限|權限|访问控制|存取控制|授权"],
+  "timeouts": ["\\b(?:timeouts?|timed out|deadlines?)\\b", "超时|逾時|截止时间|截止時間"],
+  "cache": ["\\b(?:cach(?:e|es|ing)|kv cache)\\b", "缓存|快取|緩存"],
+  "config": ["\\b(?:configs?|configuration|settings)\\b", "配置|設定|设置|組態"]
+}

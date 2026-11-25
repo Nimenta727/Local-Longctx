@@ -7,6 +7,8 @@ from .planner import Plan, RequestError
 from .context import check_budget
 from .backend import BackendError
 
+NATIVE_CONTEXT_MARGIN = 256
+
 PROMPT_FIELDS={"model","messages","system","thinking","tool_choice","tools"}
 GEN_FIELDS=PROMPT_FIELDS|{"max_tokens","stream","metadata","stop_sequences","temperature","top_k","top_p"}
 
@@ -114,7 +116,10 @@ def prepare_native(body,c,backend):
         fail("stream must be boolean")
     n=count_native(backend,prompt)
     try:
-        check_budget(n,output,c.context,margin=256)
+        check_budget(n,output,c.context,margin=NATIVE_CONTEXT_MARGIN)
     except ValueError as exc:
-        raise RequestError("maximum context window exceeded: " + str(exc)) from exc
+        raise RequestError(
+            f"maximum context window exceeded: input={n}, output={output}, "
+            f"margin={NATIVE_CONTEXT_MARGIN}, window={c.context}"
+        ) from exc
     return Plan(n,output,c.context,"freetoken-native-messages"),dict(body)

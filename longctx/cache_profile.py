@@ -6,7 +6,7 @@ import os
 import tempfile
 
 from .backend import BackendError
-from .cache_control import POOLS, plan, snapshot
+from .cache_control import POOLS, plan, snapshot, uint
 
 
 def profile_path(backend, config):
@@ -23,8 +23,12 @@ def profile_path(backend, config):
 
 def save(backend, config, changes):
     path = profile_path(backend, config)
-    previous = load(path)
-    data = {**previous, **changes}
+    try:
+        previous = load(path)
+    except ValueError:
+        # An explicitly applied configuration can replace a damaged profile.
+        previous = {}
+    data = {**previous, **validated(changes)}
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False, mode="w", encoding="utf-8") as fp:
         temporary = fp.name
         try:
@@ -38,9 +42,15 @@ def save(backend, config, changes):
                 os.unlink(temporary)
 
 
+def validated(changes):
+    if not isinstance(changes, dict) or set(changes) - set(POOLS):
+        raise ValueError("invalid saved cache profile")
+    return {name: uint(value) for name, value in changes.items()}
+
+
 def load(path):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return validated(json.loads(path.read_text(encoding="utf-8")))
     except FileNotFoundError:
         return {}
 
@@ -53,8 +63,6 @@ def restore(backend, config):
         g = snapshot(backend, config)
         if g["active_requests"]:
             return "unavailable"
-        if not isinstance(changes, dict) or set(changes) - set(POOLS):
-            return "unavailable"
         pending = {name: value for name, value in changes.items()
                    if value != g["pools"][name]["value"]}
         if pending:
@@ -62,8 +70,10 @@ def restore(backend, config):
             response = backend.json("/v1/cache/rebuild",
                                     dict(proposed["arguments"], mode="if_idle", timeout=300),
                                     timeout=310)
-            if response.get("status") != "ok":
+            if not isinstance(response, dict) or response.get("status") != "ok":
                 return "unavailable"
-        return "restored"
+            g = snapshot(backend, config)
+        return ("restored" if all(g["pools"][name]["value"] == value
+                                  for name, value in changes.items()) else "unavailable")
     except (OSError, ValueError, KeyError, TypeError, BackendError, http.client.HTTPException):
         return "unavailable"

@@ -20,3 +20,18 @@ class ReleaseCoreTests(unittest.TestCase):
         for bad in (False,0,"",{}):
             with self.assertRaises(RequestError):
                 validate_prompt({"model":c.model_id,"messages":[{"role":"user","content":"test"}],"tools":bad},c,True)
+
+    def test_backend_json_rejects_invalid_protocol_envelopes_and_closes(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from longctx.backend import Backend, BackendError
+
+        backend = Backend(SimpleNamespace())
+        for payload in (b"[]", b"null", b"{", b'{"input_tokens":NaN}', b"\xff"):
+            connection = Mock()
+            response = Mock(status=200)
+            response.read.return_value = payload
+            with patch.object(backend, "request", return_value=(connection, response)):
+                with self.assertRaises(BackendError):
+                    backend.json("/v1/messages/count_tokens")
+            connection.close.assert_called_once()

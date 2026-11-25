@@ -21,7 +21,7 @@ class CacheTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from types import SimpleNamespace
         from unittest.mock import Mock, patch
-        from longctx.cache_profile import restore, save
+        from longctx.cache_profile import profile_path, restore, save
 
         with TemporaryDirectory() as directory:
             state = Path(directory)
@@ -42,16 +42,36 @@ class CacheTests(unittest.TestCase):
                                   "unit_bytes": 4, "adjustable": True}
             geometry = {"pools": pools, "budget_bytes": 512, "active_requests": 0}
             save(backend, config, {"kv_tokens": 96})
-            with patch("longctx.cache_profile.snapshot", return_value=geometry):
+            restored_geometry = {**geometry, "pools": {
+                **pools, "kv_tokens": {**pools["kv_tokens"], "value": 96},
+            }}
+            with patch("longctx.cache_profile.snapshot", side_effect=[geometry, restored_geometry]):
                 self.assertEqual(restore(backend, config), "restored")
                 backend.json.assert_called_once_with(
                     "/v1/cache/rebuild", {"num_pages": 6, "mode": "if_idle", "timeout": 300},
                     timeout=310,
                 )
                 backend.json.reset_mock()
+            with patch("longctx.cache_profile.snapshot", return_value=geometry):
+                # The engine can say OK without actually landing the requested value.
+                self.assertEqual(restore(backend, config), "unavailable")
+                backend.json.assert_called_once()
+                backend.json.reset_mock()
                 geometry["budget_bytes"] = 256
                 self.assertEqual(restore(backend, config), "unavailable")
                 backend.json.assert_not_called()
                 backend.decision.gpu_uuid = "different"
                 self.assertEqual(restore(backend, config), "default")
+                backend.json.assert_not_called()
+
+            backend.decision.gpu_uuid = "gpu"
+            path = profile_path(backend, config)
+            for damaged in ("{", "null", '{"kv_tokens":64.0}'):
+                path.write_text(damaged, encoding="utf-8")
+                backend.json.reset_mock()
+                self.assertEqual(restore(backend, config), "unavailable")
+                backend.json.assert_not_called()
+                save(backend, config, {"kv_tokens": 96})
+                with patch("longctx.cache_profile.snapshot", return_value=restored_geometry):
+                    self.assertEqual(restore(backend, config), "restored")
                 backend.json.assert_not_called()

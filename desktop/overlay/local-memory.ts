@@ -1,6 +1,8 @@
 /** Recall text evidence from the compacted ancestry of the current session. */
-import { deriveEventMessage, isReplacementSurfaceEvent, type Session, type SessionSeq } from '@deepseek-ai/dsh-session'
+import { deriveEventMessage, type Session, type SessionSeq } from '@deepseek-ai/dsh-session'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { archiveSources } from './local-archive.ts'
+import { conceptMatches } from './local-concepts.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -23,12 +25,13 @@ export function recallLocalMemory(session: Session, incoming: readonly UserMessa
     .flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : []))
     .join(' ').slice(0, 8192)
   const keys = keywords(query)
-  if (!keys.size) return undefined
+  const queryConcepts = conceptMatches(query)
+  if (!keys.size && !queryConcepts.size) return undefined
   const active = new Set(session.surface.nodes)
   const seen = new Set<SessionSeq>()
   const used = new Set<string>()
   const pending = [...active]
-  const hits: { seq: SessionSeq; text: string; score: number }[] = []
+  const hits: { seq: SessionSeq; text: string; score: number; literal: boolean }[] = []
   while (pending.length) {
     const seq = pending.pop()
     if (seq === undefined || seen.has(seq)) continue
@@ -38,12 +41,7 @@ export function recallLocalMemory(session: Session, incoming: readonly UserMessa
     if (event.type === 'user/message' && event.data.source.kind === source && active.has(seq)) {
       for (const block of event.data.content) if (block.type === 'text') used.add(block.text)
     }
-    if (isReplacementSurfaceEvent(event)) {
-      const refs = event.sourceEventSeqs ?? []
-      if (event.type === 'tool/result' || refs.some(ref => session.eventAt(ref)?.type === 'compaction/summary')) {
-        for (const ref of refs) pending.push(ref)
-      }
-    }
+    for (const ref of archiveSources(session, seq)) pending.push(ref)
     const directUser = event.type === 'user/message' && event.data.source.kind === 'user'
     if (active.has(seq) || (!directUser && event.type !== 'assistant/message' && event.type !== 'tool/result')) continue
     const message = deriveEventMessage(event)
@@ -53,14 +51,16 @@ export function recallLocalMemory(session: Session, incoming: readonly UserMessa
       for (const line of block.text.split(/\r?\n/u)) {
         const words = keywords(line)
         const matches = [...keys].filter(word => words.has(word))
-        if (matches.length < 2 && !matches.some(word => /\d/u.test(word))) continue
-        const first = line.toLowerCase().indexOf(matches[0] ?? '')
+        const literal = matches.length >= 2 || matches.some(word => /\d/u.test(word))
+        const related = !literal && queryConcepts.size ? [...conceptMatches(line, queryConcepts)] : []
+        if (!literal && related.length < Math.min(2, queryConcepts.size || 2)) continue
+        const first = literal ? line.toLowerCase().indexOf(matches[0] ?? '') : Math.min(...related.map(([, at]) => at))
         const text = line.slice(Math.max(0, first - 60), Math.max(0, first - 60) + 230)
-        hits.push({ seq, text, score: matches.length })
+        hits.push({ seq, text, literal, score: literal ? matches.length : related.length })
       }
     }
   }
-  hits.sort((a, b) => b.score - a.score || b.seq - a.seq)
+  hits.sort((a, b) => Number(b.literal) - Number(a.literal) || b.score - a.score || b.seq - a.seq)
   const evidence: { seq: SessionSeq; text: string }[] = []
   for (const { seq, text } of hits) {
     if (evidence.some(hit => hit.text === text)) continue

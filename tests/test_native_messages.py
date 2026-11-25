@@ -37,5 +37,5 @@ class NativeMessagesTests(unittest.TestCase):
             prepare_native(self.req,self.c,self.b)
     def test_context_overflow_is_identifiable_by_desktop_adapter(self):
         self.c.context = 512
-        with self.assertRaisesRegex(RequestError, "maximum context window exceeded"):
+        with self.assertRaisesRegex(RequestError, "input=128, output=256, margin=256, window=512"):
             prepare_native(self.req,self.c,self.b)

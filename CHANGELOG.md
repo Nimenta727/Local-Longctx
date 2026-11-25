@@ -1,5 +1,10 @@
 # 更新日志 / Changelog
 
+## 0.3.0-alpha.4 — 2026-11-25
+- Harness 请求统一预算，本地归档大型工具结果并保留诊断行。 / Unified request budgeting and bounded previews with archived tool output.
+- 添加任务状态出处、中英术语召回和固定评测基线。 / Source-linked task state, bilingual recall, and a reproducible context baseline.
+- 加固 SQLite 事务、缓存恢复、桌面就绪检测和网关协议校验。 / Harden session transactions, cache restoration, worker readiness, and gateway validation.
+
 ## 0.3.0-alpha.3 — 2026-11-25
 - 桌面自动压缩本地会话并召回归档。 / Automatic local session compaction and archival recall in the desktop app.
 - 保存并重新校验缓存容量，统一管理桌面本地数据。 / Persist and revalidate cache capacities and keep desktop data under one app directory.
