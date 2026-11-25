@@ -75,6 +75,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm --prefix desktop run package:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $packagedPython = (Resolve-Path 'desktop/dist/win-unpacked/resources/farstack-runtime/python.exe').Path
+          & $packagedPython -I -c "import torch; import longctx.desktop_worker; import freetoken.kernel._pinned_tensor; assert torch.version.cuda.startswith('13.')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installedRuntime = (Get-Item $packagedPython).Directory
+          Get-ChildItem "$installedRuntime/Lib/site-packages/torch/lib" -Filter 'torch_cuda.dll' -ErrorAction Stop | Out-Null
           npm --prefix desktop run test:electron
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:FARSTACK_ELECTRON = (Resolve-Path 'desktop/dist/win-unpacked/FarStack.exe').Path

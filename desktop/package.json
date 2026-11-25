@@ -10,7 +10,7 @@
     "test:browser": "node tests/workspace.browser.mjs",
     "test:electron": "node tests/workspace.electron.mjs",
     "test:tools": "node tests/conversation-tools.test.mjs",
-    "package:win": "electron-builder --win nsis --x64 --publish never"
+    "package:win": "node package-windows.cjs"
   },
   "devDependencies": {
     "electron": "44.11.5",
@@ -21,7 +21,7 @@
     "appId": "org.farstack.desktop",
     "productName": "FarStack",
     "files": ["app/**", "package.json"],
-    "extraResources": [{"from": "${env.FARSTACK_RUNTIME_DIR}", "to": "farstack-runtime"}],
+    "compression": "maximum",
     "win": {"target": "nsis", "icon": "app/farstack.ico", "artifactName": "FarStack-${version}-Windows-x64.${ext}"},
     "nsis": {"oneClick": false, "allowToChangeInstallationDirectory": true}
   }
