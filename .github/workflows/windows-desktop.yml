@@ -1,0 +1,73 @@
+name: Windows desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/windows-desktop.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    env:
+      MAX_JOBS: '2'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONUTF8: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
+        with:
+          arch: x64
+      - uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d
+        with:
+          cuda: '13.0.0'
+          method: network
+          sub-packages: '["nvcc", "cudart", "nvrtc", "nvjitlink", "cccl"]'
+          use-github-cache: 'false'
+          use-local-cache: 'false'
+      - name: Stage and verify the native inference runtime
+        shell: pwsh
+        run: |
+          $pythonRoot = Split-Path (Get-Command python).Source
+          $runtime = Join-Path $env:RUNNER_TEMP farstack-runtime
+          python desktop/build_windows_runtime.py $pythonRoot $runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "FARSTACK_RUNTIME_DIR=$runtime" >> $env:GITHUB_ENV
+      - name: Test and package the desktop
+        shell: pwsh
+        run: |
+          npm ci --prefix desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run test:tools
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run package:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run test:electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem desktop/dist/FarStack-*-Windows-x64.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -Encoding ascii ($_.FullName + '.sha256')
+          }
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: farstack-windows-x64
+          path: |
+            desktop/dist/FarStack-*-Windows-x64.exe
+            desktop/dist/FarStack-*-Windows-x64.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
