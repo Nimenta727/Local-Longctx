@@ -254,6 +254,7 @@ export function installRuntime(owner) {
             proc.once('exit', (code, signal) => {
                 if (child !== proc)
                     return;
+                cancelConversation();
                 child = undefined;
                 key = '';
                 activeSettings = undefined;
@@ -303,11 +304,18 @@ export function installRuntime(owner) {
     ipcMain.handle(PREFIX + 'stop', event => { owner(event); if (operation)
         throw new Error('Maintenance in progress'); if (child) {
         phase = 'stopping';
+        cancelConversation();
         child.stdin?.end();
     } return status(); });
     const cancelConversation = installConversations(ipcMain, owner, join(stateDir, 'conversations'), () => {
         if (phase !== 'ready' || !key) throw new Error('请先启动模型');
         return { key, output };
+    }, {
+        chooseFolder: async window => {
+            const result = await dialog.showOpenDialog(window, { title: '选择会话工作目录', properties: ['openDirectory'] });
+            return result.canceled ? null : result.filePaths[0];
+        },
+        revealFile: path => shell.showItemInFolder(path),
     });
     const cacheRequest = async (path, body) => {
         if (phase !== 'ready' || !key)

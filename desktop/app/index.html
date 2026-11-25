@@ -59,9 +59,17 @@
       <section id="chat" hidden>
         <header class="page-heading"><div><h1>本地会话</h1><p id="chat-status">启动模型后可发送消息。</p></div><button class="outline" type="button" id="new-chat">新建会话</button></header>
         <div class="chat-layout">
-          <aside class="card conversations"><h2>会话记录</h2><div id="conversations"></div></aside>
+          <aside class="card conversations"><h2>会话记录</h2><div id="conversations"></div><section id="tasks" hidden><h2>任务列表</h2><ul id="task-list"></ul></section><section id="deliverables" hidden><h2>交付文件</h2><div id="deliverable-list"></div></section></aside>
           <section class="card chat-card" aria-label="当前会话">
+            <div class="chat-workspace"><button type="button" class="outline" id="choose-workspace">选择工作目录</button><small id="workspace-path">选择目录以启用文件和命令工具</small></div>
             <div id="transcript" role="log" aria-live="polite"></div>
+            <p id="current-tool" class="notice" role="status" hidden></p>
+            <section class="tool-prompt" id="tool-prompt" aria-labelledby="tool-title" hidden>
+              <h2 id="tool-title"></h2><pre id="tool-detail"></pre>
+              <form id="tool-response"><label for="tool-answer" id="tool-answer-label">你的回答</label><textarea id="tool-answer" rows="3" maxlength="8000"></textarea>
+                <div class="button-row"><button class="outline" type="button" id="tool-deny">拒绝</button><button class="primary" type="submit" id="tool-accept">允许一次</button></div>
+              </form>
+            </section>
             <form id="composer"><label for="prompt">消息</label><textarea id="prompt" rows="3" placeholder="输入消息…"></textarea>
               <div class="button-row"><button class="outline" type="button" id="cancel-chat" hidden>停止生成</button><button class="primary" type="submit" id="send-chat">发送消息</button></div>
             </form>

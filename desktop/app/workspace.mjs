@@ -29,6 +29,7 @@ const phaseNames={idle:'未启动',starting:'正在启动',ready:'引擎就绪',
 let status={phase:'idle'}, startup={...defaults}, startupLoaded=false, startupDirty=false, startupBusy=false
 let snapshot=null, draft={}, draftRevision='', presetName='', poolsKey='', cacheBusy=false, refreshBusy=false, cacheUnavailable=false
 let view='runtime', conversation, messages=[], generating=false
+let workspace, todos=[], deliverables=[], liveText='', pendingTool, choosingWorkspace=false
 const poolElements=new Map()
 let refreshGeneration=0
 
@@ -392,21 +393,102 @@ async function apply(){
 }
 
 function syncChat(){
-  $('send-chat').disabled=generating||status.phase!=='ready'
+  $('send-chat').disabled=generating||choosingWorkspace||status.phase!=='ready'
   $('cancel-chat').hidden=!generating
-  $('new-chat').disabled=generating
+  $('new-chat').disabled=generating||choosingWorkspace
+  $('choose-workspace').disabled=generating||choosingWorkspace
 }
+
+const toolNames={read:'读取文件',write:'写入文件',edit:'编辑文件',glob:'查找文件',grep:'搜索文本',
+  bash:'运行 Bash',pwsh:'运行 PowerShell',todo_write:'更新任务列表',ask_user_question:'向你提问',present:'展示交付文件'}
+const toolLabel=name=>toolNames[name]??name
 
 function renderMessages(){
   const list=$('transcript')
   list.replaceChildren()
   if(!messages.length)list.append(node('p','发送消息即可开始本地会话。','notice'))
-  for(const message of messages){
-    const block=node('div',undefined,'message '+message.role)
-    block.append(node('small',message.role==='user'?'你':'本地模型'),node('p',message.content))
+  const calls=new Map()
+  const addText=(role,text)=>{
+    if(!text)return
+    const block=node('div',undefined,'message '+role)
+    block.append(node('small',role==='user'?'你':'本地模型'),node('p',text))
     list.append(block)
   }
+  for(const {role,content} of messages){
+    if(typeof content==='string'){addText(role,content);continue}
+    for(const block of content){
+      if(block.type==='text')addText(role,block.text)
+      if(block.type==='tool_use')calls.set(block.id,toolLabel(block.name))
+      if(block.type==='tool_result'){
+        const detail=node('details',undefined,'tool-log')
+        detail.append(node('summary',(calls.get(block.tool_use_id)??'工具')+(block.is_error?' · 未完成':' · 已完成')),
+          node('pre',block.content))
+        list.append(detail)
+      }
+    }
+  }
+  addText('assistant',liveText)
   list.scrollTop=list.scrollHeight
+}
+
+function renderWorkspace(){
+  $('workspace-path').textContent=workspace??'选择目录以启用文件和命令工具'
+  const list=$('task-list')
+  list.replaceChildren()
+  for(const task of todos){
+    const status={pending:'待办',in_progress:'进行中',completed:'已完成'}[task.status]
+    list.append(node('li',status+' · '+task.content))
+  }
+  $('tasks').hidden=!todos.length
+  const files=$('deliverable-list')
+  files.replaceChildren()
+  for(const {path,description} of deliverables){
+    const button=node('button',description||path)
+    button.type='button'
+    button.title=path
+    button.onclick=()=>void api.revealFile(conversation,path).catch(error=>report('chat-error',error))
+    files.append(button)
+  }
+  $('deliverables').hidden=!deliverables.length
+}
+
+function loadSession(saved){
+  conversation=saved.id
+  messages=saved.messages
+  workspace=saved.workspace
+  todos=saved.todos??[]
+  deliverables=saved.deliverables??[]
+  liveText=''
+  renderWorkspace()
+  renderMessages()
+}
+
+function toolPrompt(prompt){
+  pendingTool=prompt
+  $('tool-prompt').hidden=!prompt
+  if(!prompt)return
+  const question=prompt.kind==='question'
+  $('tool-title').textContent=prompt.title
+  $('tool-detail').textContent=prompt.detail
+  $('tool-answer').value=''
+  $('tool-answer').hidden=!question
+  $('tool-answer-label').hidden=!question
+  $('tool-accept').textContent=question?'发送回答':'允许一次'
+  $('tool-deny').textContent=question?'跳过':'拒绝'
+  $('tool-accept').disabled=false
+  $('tool-deny').disabled=false
+}
+
+async function replyToTool(answer){
+  if(!pendingTool)return
+  $('tool-accept').disabled=true
+  $('tool-deny').disabled=true
+  try{await api.answerTool(conversation,pendingTool.token,answer)}
+  catch(error){
+    report('chat-error',error)
+    $('tool-accept').disabled=false
+    $('tool-deny').disabled=false
+  }
 }
 
 async function listConversations(){
@@ -416,13 +498,13 @@ async function listConversations(){
   if(!rows.length)list.append(node('small','暂无本地记录'))
   for(const row of rows){
     const item=node('button',row.title)
-    item.type='button';item.disabled=generating
+    item.type='button';item.disabled=generating||choosingWorkspace
     if(row.id===conversation)item.setAttribute('aria-current','page')
     item.onclick=async()=>{
       try{
         const loaded=await api.loadConversation(row.id)
-        if(generating)return
-        conversation=loaded.id;messages=loaded.messages;renderMessages()
+        if(generating||choosingWorkspace)return
+        loadSession(loaded)
         await listConversations()
       }catch(error){report('chat-error',error)}
     }
@@ -438,18 +520,18 @@ async function send(event){
   generating=true;syncChat()
   report('chat-error',null)
   $('prompt').value=''
-  messages.push({role:'user',content:text},{role:'assistant',content:''})
+  messages.push({role:'user',content:text})
   renderMessages()
   void listConversations().catch(()=>{})
   try{
     const saved=await api.send(conversation,text)
-    if(saved)messages=saved.messages
+    if(saved)loadSession(saved)
   }catch(error){
     report('chat-error',error)
     const saved=await api.loadConversation(conversation).catch(()=>null)
-    if(saved?.messages.length)messages=saved.messages
+    if(saved?.messages.length)loadSession(saved)
     else $('prompt').value=text
-  }finally{generating=false;renderMessages();syncChat();void listConversations().catch(()=>{})}
+  }finally{generating=false;liveText='';toolPrompt(null);report('current-tool',null);renderMessages();syncChat();void listConversations().catch(()=>{})}
 }
 
 for(const button of document.querySelectorAll('[data-view]'))button.onclick=()=>openView(button.dataset.view)
@@ -466,13 +548,38 @@ $('startup-form').onsubmit=event=>{
   event.preventDefault();refreshGeneration++
   void action(()=>api.saveStartup(startupPayload()),{save:true})
 }
-$('new-chat').onclick=()=>{if(!generating){conversation=undefined;messages=[];renderMessages();$('prompt').focus();void listConversations().catch(()=>{})}}
+$('new-chat').onclick=()=>{
+  if(generating||choosingWorkspace)return
+  loadSession({messages:[]})
+  $('prompt').focus()
+  void listConversations().catch(()=>{})
+}
+$('choose-workspace').onclick=async()=>{
+  if(generating||choosingWorkspace)return
+  conversation??=crypto.randomUUID()
+  choosingWorkspace=true
+  syncChat()
+  try{loadSession(await api.selectWorkspace(conversation))}
+  catch(error){report('chat-error',error)}
+  finally{choosingWorkspace=false;syncChat()}
+}
+$('tool-response').onsubmit=event=>{
+  event.preventDefault()
+  if(!pendingTool)return
+  const answer=pendingTool.kind==='question'?$('tool-answer').value.trim():true
+  if(answer)void replyToTool(answer)
+}
+$('tool-deny').onclick=()=>void replyToTool(false)
 $('composer').onsubmit=send
 $('cancel-chat').onclick=()=>void api.cancel().catch(error=>report('chat-error',error))
 api?.onDelta(delta=>{
-  if(generating&&delta.id===conversation&&messages.at(-1)?.role==='assistant'){
-    messages.at(-1).content+=delta.text;renderMessages()
-  }
+  if(!generating||delta.id!==conversation)return
+  if(Object.hasOwn(delta,'prompt'))toolPrompt(delta.prompt)
+  if(Object.hasOwn(delta,'tool'))report('current-tool',delta.tool?'工具运行中 · '+toolLabel(delta.tool):null)
+  if(delta.todos){todos=delta.todos;renderWorkspace()}
+  if(delta.deliverables){deliverables=delta.deliverables;renderWorkspace()}
+  if(delta.messages){messages=delta.messages;liveText='';renderMessages()}
+  if(delta.text){liveText+=delta.text;renderMessages()}
 })
 mountPresets()
 renderMessages()

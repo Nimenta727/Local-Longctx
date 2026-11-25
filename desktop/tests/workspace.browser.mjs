@@ -19,6 +19,7 @@ try {
       body:await readFile(join(import.meta.dirname,'../app',name))})
   })
   await page.addInitScript(()=>{
+    let sendEvent, settleTool
     const limits=(value,step,min,max,unit_bytes)=>({value,step,min,max,unit_bytes,adjustable:true})
     let geometry={
       pools:{
@@ -44,7 +45,22 @@ try {
       saveStartup:async values=>{Object.assign(settings,values);calls.push({startup:values})
         return {phase:'ready',model:'Qwen3-30B-A3B-Q4_K_M.gguf',bundled:true,settings,fixture:true}},
       conversations:async()=>[],
-      onDelta:()=>{},
+      selectWorkspace:async id=>({id,workspace:'/home/local/project',messages:[]}),
+      answerTool:async(id,token,answer)=>{
+        calls.push({id,token,answer})
+        settleTool(answer)
+      },
+      send:async(id,text)=>{
+        sendEvent({id,prompt:{kind:'approval',token:'once',title:'允许修改文件？',detail:'notes.txt\n\n测试内容'}})
+        const accepted=await new Promise(resolve=>{settleTool=resolve})
+        sendEvent({id,prompt:null})
+        return {id,workspace:'/home/local/project',todos:[{content:'处理工具确认',status:'completed'}],messages:[
+          {role:'user',content:text}, {role:'assistant',content:[{type:'tool_use',id:'write',name:'write',input:{}}]},
+          {role:'user',content:[{type:'tool_result',tool_use_id:'write',is_error:!accepted,content:'已确认'}]},
+          {role:'assistant',content:[{type:'text',text:'本地文件处理完成'}]},
+        ]}
+      },
+      onDelta:callback=>{sendEvent=callback},
     }})
   })
   await page.goto('https://farstack.test/')
@@ -102,9 +118,21 @@ try {
   assert.ok(saved.output<=767)
   await page.getByRole('button',{name:'本地会话'}).click()
   await page.getByRole('heading',{name:'本地会话'}).waitFor()
+  await page.getByRole('button',{name:'选择工作目录'}).click()
+  await page.getByText('/home/local/project',{exact:true}).waitFor()
+  await page.getByLabel('消息',{exact:true}).fill('写入 notes.txt')
+  await page.getByRole('button',{name:'发送消息',exact:true}).click()
+  await page.getByRole('heading',{name:'允许修改文件？'}).waitFor()
+  if (process.env.FARSTACK_TOOL_SCREENSHOT)await page.screenshot({path:process.env.FARSTACK_TOOL_SCREENSHOT})
+  await page.getByRole('button',{name:'允许一次'}).click()
+  await page.getByText('本地文件处理完成',{exact:true}).waitFor()
+  await page.getByText('写入文件 · 已完成',{exact:true}).click()
+  await page.getByText('已确认',{exact:true}).waitFor()
+  await page.getByText('已完成 · 处理工具确认',{exact:true}).waitFor()
+  assert.equal((await page.evaluate(()=>window.fixture.calls)).at(-1).answer,true)
   await page.getByRole('button',{name:'模型与缓存'}).click()
   await page.setViewportSize({width:780,height:900})
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true)
   assert.deepEqual(errors,[])
-  console.log('Rendered Chromium: pointer drag, memory budget, apply/read-back, request/revision gates, SSD settings and responsive navigation passed')
+  console.log('Rendered Chromium: cache controls, SSD settings, tool approval, saved results and responsive navigation passed')
 } finally { await browser.close() }

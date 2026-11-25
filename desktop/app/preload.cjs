@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('farstack', {
   conversations: () => invoke('conversation-list'),
   loadConversation: id => invoke('conversation-load', id),
   send: (id, text) => invoke('conversation-send', id, text),
+  selectWorkspace: id => invoke('conversation-workspace', id),
+  answerTool: (id, token, answer) => invoke('conversation-answer', id, token, answer),
+  revealFile: (id, path) => invoke('conversation-reveal', id, path),
   cancel: () => invoke('conversation-cancel'),
   onDelta: callback => {
     const receive = (_event, delta) => callback(delta)

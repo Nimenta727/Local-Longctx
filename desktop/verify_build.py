@@ -12,6 +12,7 @@ def main():
     if not npm:
         raise SystemExit("Node.js and npm are required")
     subprocess.run([npm, "run", "check"], cwd=ROOT, check=True)
+    subprocess.run([npm, "run", "test:tools"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "scripts/check_release.py"], cwd=ROOT.parent, check=True)
 
 

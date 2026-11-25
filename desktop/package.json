@@ -6,9 +6,10 @@
   "main": "app/main.mjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check app/main.mjs && node --check app/runtime.mjs && node --check app/preload.cjs && node --check app/conversations.mjs && node --check app/workspace.mjs",
+    "check": "node --check app/main.mjs && node --check app/runtime.mjs && node --check app/preload.cjs && node --check app/conversations.mjs && node --check app/tool-stream.mjs && node --check app/tools.mjs && node --check app/workspace.mjs",
     "test:browser": "node tests/workspace.browser.mjs",
     "test:electron": "node tests/workspace.electron.mjs",
+    "test:tools": "node tests/conversation-tools.test.mjs",
     "package:win": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {

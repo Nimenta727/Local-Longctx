@@ -17,6 +17,8 @@ python desktop/launch_dev.py
 
 在「模型与缓存」页选择 GGUF 并启动。引擎就绪后，可以拖动 KV、MoE 专家和滑窗 KV 滑杆查看容量与显存估算，空闲时点击「应用缓存」。展开「启动参数」可设置下次启动的预算和策略。实验性 SSD 默认关闭，手动开启后显示相应参数。 [桌面使用指南](desktop/README.md)
 
+在「本地会话」选择工作目录后，支持工具调用的模型可读写和搜索文件、在确认后运行命令，并把结果留在本地会话。 [工具使用说明](desktop/README.md#让本地模型使用工具)
+
 ## 网关与构建 / Gateway and builds
 
 - 启动网关并使用 Messages、Chat Completions 或受管会话 API。 [CLI 与 API](docs/usage.md)
