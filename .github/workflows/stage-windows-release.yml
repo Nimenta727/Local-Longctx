@@ -1,0 +1,47 @@
+name: Stage Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: Successful Windows desktop build run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: ${{ inputs.run-id }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Verify the build is for the current desktop version
+        run: |
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          source_sha=$(gh run view "$BUILD_RUN" --json headSha,conclusion,workflowName --jq 'select(.conclusion=="success" and .workflowName=="Windows desktop build")|.headSha')
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          git diff --quiet "$source_sha" "$GITHUB_SHA" -- desktop/app desktop/package.json desktop/package-lock.json desktop/build_windows_runtime.py vendor/freetoken longctx pyproject.toml
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: farstack-windows-x64
+          path: release-assets
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run-id }}
+      - name: Check the Windows executable and upload it to a draft release
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          executable="FarStack-${version}-Windows-x64.exe"
+          manifest="$executable.sha256"
+          cd release-assets
+          test "$(stat -c %s "$executable")" -lt 2147483648
+          file "$executable" | grep 'PE32'
+          tr -d '\r' < "$manifest" | sha256sum --check
+          gh release create "v$version" --target "$SOURCE_SHA" --draft --title "远栈 FarStack v$version · Windows" --notes "" "$executable" "$manifest"
