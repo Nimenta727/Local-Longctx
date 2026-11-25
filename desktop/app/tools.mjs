@@ -130,8 +130,11 @@ function runCommand(root,command,signal) {
   const executable=windows
     ?join(process.env.SystemRoot??'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe')
     :'/bin/bash'
-  const flags=windows?['-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(command,'utf16le').toString('base64')]
-    :['--noprofile','--norc','-c',command]
+  const windowsFlags=()=> {
+    const script='$ProgressPreference = "SilentlyContinue"; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); '+command
+    return ['-NoLogo','-NoProfile','-NonInteractive','-OutputFormat','Text','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')]
+  }
+  const flags=windows?windowsFlags():['--noprofile','--norc','-c',command]
   return new Promise((resolve,reject)=>{
     const env={...process.env}
     delete env.BASH_ENV

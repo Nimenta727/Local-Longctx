@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -29,7 +29,7 @@ function stream(blocks,reason='end_turn',finish=true){
 }
 const call=(id,name,input)=>({type:'tool_use',id,name,input})
 async function fixture(t, request, onPrompt){
-  const root=await mkdtemp(join(tmpdir(),'farstack-workspace-'))
+  const root=await realpath(await mkdtemp(join(tmpdir(),'farstack-workspace-')))
   const data=await mkdtemp(join(tmpdir(),'farstack-session-'))
   t.after(()=>Promise.all([root,data].map(path=>rm(path,{recursive:true,force:true}))))
   const handlers=new Map(), events=[], revealed=[]
@@ -130,7 +130,8 @@ test('a local shell command only runs after confirmation and returns stdout',asy
     index++
     if(index===1)return stream([call('command',name,{command,description:'Print test text'})],'tool_use')
     const result=JSON.parse(options.body).messages.at(-1).content[0]
-    assert.match(result.content,/退出码 0\nfarstack-tool/)
+    assert.match(result.content,/^退出码 0\n/)
+    assert.match(result.content,/^farstack-tool\r?$/m)
     assert.equal(result.is_error,undefined)
     return stream([{type:'text',text:'命令完成'}])
   },(prompt,invoke)=>{
