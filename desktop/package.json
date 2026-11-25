@@ -1,0 +1,27 @@
+{
+  "name": "farstack-desktop",
+  "version": "0.3.0-alpha.6",
+  "private": true,
+  "type": "module",
+  "main": "app/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check app/main.mjs && node --check app/runtime.mjs && node --check app/preload.cjs && node --check app/conversations.mjs && node --check app/workspace.mjs",
+    "test:browser": "node tests/workspace.browser.mjs",
+    "test:electron": "node tests/workspace.electron.mjs",
+    "package:win": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.11.5",
+    "electron-builder": "26.17.0",
+    "playwright": "1.61.1"
+  },
+  "build": {
+    "appId": "org.farstack.desktop",
+    "productName": "FarStack",
+    "files": ["app/**", "package.json"],
+    "extraResources": [{"from": "${env.FARSTACK_RUNTIME_DIR}", "to": "farstack-runtime"}],
+    "win": {"target": "nsis", "icon": "app/farstack.ico", "artifactName": "FarStack-${version}-Windows-x64.${ext}"},
+    "nsis": {"oneClick": false, "allowToChangeInstallationDirectory": true}
+  }
+}

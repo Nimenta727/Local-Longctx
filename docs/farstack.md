@@ -10,25 +10,20 @@
 
 ## Windows 构建
 
-在 Windows x64 的 Visual Studio 开发环境中准备 CPython 3.12 可搬移目录、CUDA 13 和匹配的 NVIDIA 驱动。使用仓库固定的 Node 和 pnpm 版本。
+在 Windows x64 的 Visual Studio 开发环境中准备 CPython 3.12 可搬移目录、CUDA 13、匹配的 NVIDIA 驱动和 Node.js 24。
 
 ```powershell
 python desktop/build_windows_runtime.py C:\build\python C:\build\farstack-runtime
 $env:FARSTACK_RUNTIME_DIR = 'C:\build\farstack-runtime'
-python desktop/prepare_harness.py
-Set-Location desktop/upstream
-pnpm install --frozen-lockfile
-pnpm run build:artifacts
-pnpm --filter @deepseek-ai/dsh-desktop run package:win:x64:unsigned
+npm ci --prefix desktop
+npm --prefix desktop run package:win
 ```
 
-上述命令为未签名的 NSIS 安装程序构建入口，输出目录是 `desktop/upstream/apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts`。包内检查使用安装目录自带的 Python 验证 CUDA 版 PyTorch、FreeToken 原生扩展和命令入口。还需要在 Windows NVIDIA 实机安装、选择模型并完成一次生成。发行时上传通过验收的 `farstack-*-win-x64-unsigned.exe`，并标明签名状态。
-
-远栈随包使用自己的 Python 和 FreeToken，旧开发模式仍可选外部引擎。打包态跳过上游账号登录页，模型就绪后自动注册远栈本地模型。旧数据可通过 `LOCAL_LONGCTX_DATA_DIR` 指回旧数据目录或其完整备份。
+该入口打包 `desktop/app` 和 FarStack 的内置运行时，输出 `desktop/dist/FarStack-*-Windows-x64.exe`。签名取决于 Windows 构建机的签名配置。发布前在 Windows NVIDIA 实机安装，验证选择 GGUF、启动引擎和生成。旧资料可通过 `LOCAL_LONGCTX_DATA_DIR` 指回原目录或完整备份。
 
 ## 功能验证
 
-桌面本地模型借由会话标识进入预算检查。网关保存已收到的原文副本，再按原生 Token 预算缩减上下文。既有 Harness 会话日志保留原始事件，网关的内容去重副本不作为累计 Token 统计。原文引用可通过已鉴权的 `POST /local/desktop/history/read` 读取。
+独立会话工作区将原文存到本地，借由会话标识进入网关预算检查。网关保存已收到的原文副本，再按原生 Token 预算缩减上下文。内容去重副本不作为累计 Token 统计。原文引用可通过已鉴权的 `POST /local/desktop/history/read` 读取。
 
 活动 KV 报告磁盘读写故障时，网关会以显存 KV 重启引擎。若客户端尚未收到流内容，网关按恢复后的容量重新装配提示并重试一次。已开始返回的流不会自动重放，下一轮使用恢复后的引擎。用户保存的 SSD 配置保留，下次手动启动时会再次生效。
 

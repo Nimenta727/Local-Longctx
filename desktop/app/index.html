@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>远栈 FarStack</title>
+  <link rel="icon" href="./farstack.png">
+  <link rel="stylesheet" href="./workspace.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="brand"><img src="./farstack.png" width="38" height="38" alt=""><div><strong>远栈</strong><small>FarStack</small></div></div>
+      <nav aria-label="工作区">
+        <button type="button" data-view="chat"><span class="nav-mark chat-icon"></span>本地会话</button>
+        <button type="button" data-view="runtime" aria-current="page"><span class="nav-mark sliders-icon"></span>模型与缓存</button>
+      </nav>
+      <div class="rail-bottom"><span><i id="engine-dot"></i><span id="rail-status">连接工作区</span></span><button type="button" id="open-data">打开数据目录</button></div>
+    </aside>
+    <main id="main">
+      <header class="topbar"><span id="breadcrumb">工作区 / 模型与缓存</span><span id="environment"></span></header>
+      <section id="runtime">
+        <header class="page-heading"><div><h1>模型与缓存</h1><p>按当前模型与硬件容量调整推理参数。</p></div></header>
+        <section class="model-card" aria-labelledby="model-name">
+          <div class="model-mark"><span></span><span></span><span></span></div>
+          <div class="model-label"><h2 id="model-name">尚未选择模型</h2><p id="model-meta"></p></div>
+          <span class="state-chip" id="model-status">未启动</span>
+          <div class="button-row"><button class="outline" type="button" id="pick-engine" hidden>选择 FreeToken</button><button class="outline" type="button" id="pick-model">选择 GGUF</button><button class="primary" type="button" id="engine-action">启动模型</button></div>
+        </section>
+        <p role="alert" id="runtime-error" class="alert" hidden></p>
+        <div class="runtime-grid">
+          <section class="card" id="cache-card" aria-labelledby="cache-title">
+            <div class="card-heading"><div><h2 id="cache-title">缓存分配</h2><p id="cache-caption">启动模型后读取引擎容量。</p></div><span class="chip" id="cache-profile" hidden></span></div>
+            <div id="cache-controls" hidden>
+              <div class="presets" id="presets" aria-label="缓存预设"></div>
+              <div id="pools"></div>
+              <div class="cache-footer">
+                <div><small>预计缓存显存 / 可分配显存</small><strong id="cache-cost" aria-live="polite">—</strong></div>
+                <div class="button-row"><button class="outline" type="button" id="cache-reset">重置</button><button class="primary" type="button" id="cache-apply">应用缓存</button></div>
+              </div>
+              <div id="cache-note" class="notice" role="status"></div>
+            </div>
+          </section>
+          <section class="card resources" aria-labelledby="resources-title">
+            <div class="card-heading"><div><h2 id="resources-title">资源监控</h2><p>来自本地引擎与硬件</p></div></div>
+            <div id="resources"></div>
+          </section>
+          <details class="card startup" id="startup">
+            <summary><span>启动参数</span><small>保存后，下次启动生效</small></summary>
+            <form id="startup-form">
+              <div id="startup-controls" class="startup-grid"></div>
+              <div class="button-row"><button type="submit" class="primary" id="save-startup">保存启动参数</button></div>
+              <p id="startup-note" class="notice" role="status"></p>
+            </form>
+          </details>
+        </div>
+      </section>
+      <section id="chat" hidden>
+        <header class="page-heading"><div><h1>本地会话</h1><p id="chat-status">启动模型后可发送消息。</p></div><button class="outline" type="button" id="new-chat">新建会话</button></header>
+        <div class="chat-layout">
+          <aside class="card conversations"><h2>会话记录</h2><div id="conversations"></div></aside>
+          <section class="card chat-card" aria-label="当前会话">
+            <div id="transcript" role="log" aria-live="polite"></div>
+            <form id="composer"><label for="prompt">消息</label><textarea id="prompt" rows="3" placeholder="输入消息…"></textarea>
+              <div class="button-row"><button class="outline" type="button" id="cancel-chat" hidden>停止生成</button><button class="primary" type="submit" id="send-chat">发送消息</button></div>
+            </form>
+            <p role="alert" id="chat-error" class="alert" hidden></p>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./workspace.mjs"></script>
+</body>
+</html>

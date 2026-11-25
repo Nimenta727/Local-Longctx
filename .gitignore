@@ -12,6 +12,8 @@ benchmark-results/
 
 # Pinned local upstream development checkout
 /desktop/upstream/
+/desktop/node_modules/
+/desktop/dist/
 
 # Local build and release output / 本地构建产物
 /build/

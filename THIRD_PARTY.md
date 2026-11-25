@@ -3,7 +3,8 @@
 | Component / 组件 | License and scope / 许可与范围 |
 | --- | --- |
 | [FreeToken](https://github.com/FlashML-org/FreeToken) | Apache-2.0, source vendored at `94938a6a576926d384986fbe8cd7f1a4eb6d687e` with FarStack's Windows and storage changes / 内置源码及远栈的 Windows、存储修改 |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | MIT; pinned source overlay; original MIT notices remain / 固定源码覆盖，保留原 MIT 声明 |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | MIT, retained in the legacy desktop overlay / 旧版桌面覆盖层保留其 MIT 声明 |
+| [Electron](https://www.electronjs.org/) | MIT, desktop shell / 桌面运行时 |
 | Python | PSF; standard library / 标准库 |
 | Models / 模型 | User-provided, separately licensed / 用户提供，各自授权 |
 
