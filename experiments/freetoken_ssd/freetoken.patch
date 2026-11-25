@@ -1,0 +1,297 @@
+diff --git a/python/freetoken/engine/config.py b/python/freetoken/engine/config.py
+index 32d9823..8ee686e 100644
+--- a/python/freetoken/engine/config.py
++++ b/python/freetoken/engine/config.py
+@@ -32,6 +32,10 @@ class EngineConfig:
+     # --kv-cache-dtype: "auto" stores K and V in the compute dtype
+     kv_cache_dtype: str = "auto"
+     moe_strategy: str = "auto"
++    experimental_ssd_experts: bool = False
++    experimental_ssd_kv: str | None = None
++    experimental_ssd_expert_staging_mib: int = 4
++    experimental_ssd_kv_limit_mib: int = 256
+     # old name of moe_strategy; __post_init__ folds it in
+     moe_backend: str | None = field(default=None, repr=False)
+     # --quant-backend: layer[.kind]=kernel entries, comma separated
+diff --git a/python/freetoken/engine/engine.py b/python/freetoken/engine/engine.py
+index cfabbfa..b81f3ef 100644
+--- a/python/freetoken/engine/engine.py
++++ b/python/freetoken/engine/engine.py
+@@ -521,6 +521,44 @@ class Engine:
+
+         self.device = bind_assigned_gpu(config.tp_info.rank)
+         _adjust_config(config)
++        if config.experimental_ssd_kv is not None:
++            from freetoken.models.gguf.reader import gguf_split_paths, is_gguf_path
++
++            if not 16 <= config.experimental_ssd_kv_limit_mib <= 1024:
++                raise ValueError("SSD KV checkpoint limit must be 16-1024 MiB")
++            if (
++                config.model_config.model_type != "qwen3_moe"
++                or not is_gguf_path(config.model_path) or len(gguf_split_paths(config.model_path)) != 1
++                or config.active_encoders or config.use_dummy_weight or config.online_quant
++                or config.tp_info.size != 1 or config.max_running_req != 1
++                or config.speculative_algorithm is not None or config.page_size != 1
++                or config.cache_type != "radix" or config.kv_format != NONE or config.dtype != torch.bfloat16
++            ):
++                raise ValueError("SSD KV requires a single-file Qwen3 MoE GGUF with BF16 radix KV (page size 1), "
++                                 "one GPU and one request, without speculative or dummy weights")
++        self._ssd_expert_source = None
++        if config.experimental_ssd_experts or os.environ.get("FREETOKEN_EXPERIMENTAL_SSD_EXPERTS") == "1":
++            if (
++                config.moe_strategy != "offload" or config.tp_info.size != 1
++                or config.max_running_req != 1 or config.cuda_graph_max_bs != 0 or config.cuda_graph_bs
++                or config.moe_prefill_overlap or config.moe_cpu_layers
++                or config.speculative_algorithm is not None or config.use_dummy_weight
++                or getattr(config.model_config, "expert_quant", None) != "gguf"
++            ):
++                raise ValueError(
++                    "SSD experts require GGUF, --moe-strategy offload, one GPU and one running request, "
++                    "with CUDA graphs, prefill overlap, CPU experts, speculation and dummy weights disabled"
++                )
++            from longctx.freetoken_ssd import SSDExpertSource
++
++            if not 4 <= config.experimental_ssd_expert_staging_mib <= 32:
++                raise ValueError("SSD expert staging limit must be 4-32 MiB")
++            self._ssd_expert_source = SSDExpertSource.open(
++                config.model_path, config.model_config, config.experimental_ssd_expert_staging_mib * 2**20
++            )
++            logger.info_rank0(
++                f"Experimental SSD experts enabled ({self._ssd_expert_source.reader.required_staging_bytes} pinned staging bytes)"
++            )
+         torch.manual_seed(42)
+         self.stream = torch.cuda.Stream()
+         torch.cuda.set_stream(self.stream)
+@@ -863,8 +901,12 @@ class Engine:
+         check_locked_fetch_config(config)
+         # --moe-cpu-layers auto without a manual pin budget: load unpinned, then pin layers until the driver refuses (settle_banks)
+         # a model the CPU executor cannot serve takes the estimate path, which rejects it before the load when layers must lock
+-        probe = pin_probe_enabled(config, mixed_formats=layer_methods is not None) and _cpu_moe_executor_viable(config.model_config)
+-        if probe:
++        ssd_source = self._ssd_expert_source
++        probe = ssd_source is None and pin_probe_enabled(config, mixed_formats=layer_methods is not None) and _cpu_moe_executor_viable(config.model_config)
++        if ssd_source is not None:
++            requested_residency = None
++            cpu_layer_ids, decode_target, split_residency = frozenset(), "gpu", False
++        elif probe:
+             from freetoken.moe.host_banks import HostResidency
+
+             requested_residency = [HostResidency.DEFERRED.value] * num_moe_layers
+@@ -888,21 +930,24 @@ class Engine:
+             config.moe_cache_split, config.model_path,
+             config.model_config.num_moe_layers, config.model_config.num_experts,
+         )
+-        try:
+-            with _weight_load_context():
+-                banks = load_expert_banks(
+-                    config.model_path,
+-                    config.model_config,
+-                    method=method,
+-                    device=self.device,
+-                    dummy=config.use_dummy_weight,
+-                    parallel=expert_parallel,
+-                    layer_residency=requested_residency,
+-                    layer_methods=layer_methods,
+-                )
+-        except PinFailed as exc:
+-            raise RuntimeError(f"{exc}; {_pin_hint(self._host_tables_bytes)}") from exc
+-        banks, probed, staging = settle_banks(config, banks, probe=probe, has_locked=split_residency)
++        if ssd_source is not None:
++            banks, staging = ssd_source.bank_layouts(), None
++        else:
++            try:
++                with _weight_load_context():
++                    banks = load_expert_banks(
++                        config.model_path,
++                        config.model_config,
++                        method=method,
++                        device=self.device,
++                        dummy=config.use_dummy_weight,
++                        parallel=expert_parallel,
++                        layer_residency=requested_residency,
++                        layer_methods=layer_methods,
++                    )
++            except PinFailed as exc:
++                raise RuntimeError(f"{exc}; {_pin_hint(self._host_tables_bytes)}") from exc
++            banks, probed, staging = settle_banks(config, banks, probe=probe, has_locked=split_residency)
+         if probe:
+             cpu_layer_ids = probed
+             decode_target, split_residency = self._residency_split(config, cpu_layer_ids, method, capped=True)
+@@ -1011,6 +1056,7 @@ class Engine:
+         )
+         # before set_bank_sources: the residency validation and the copy plan's skip of non-pinned layers key on the CPU-layer set
+         cache.cpu_layer_ids = cpu_layer_ids
++        cache._ssd_expert_source = ssd_source
+         if locked_fetch:
+             cache.locked_hybrid = cpu_layer_ids
+         cache.set_bank_sources(banks.sources, layer_residency=banks.layer_residency, layer_tags=layer_tags, row_tail_bytes=banks.row_tail_bytes)
+@@ -1536,6 +1582,8 @@ class Engine:
+         )
+
+     def shutdown(self) -> None:
++        if self._ssd_expert_source is not None:
++            self._ssd_expert_source.close()
+         self.graph_runner.destroy_cuda_graphs()
+         torch.distributed.destroy_process_group()
+         destroy_distributed()
+diff --git a/python/freetoken/moe/offload_cache.py b/python/freetoken/moe/offload_cache.py
+index 9e23b26..9d06830 100644
+--- a/python/freetoken/moe/offload_cache.py
++++ b/python/freetoken/moe/offload_cache.py
+@@ -262,6 +262,7 @@ class OffloadMoeCache:
+         else:
+             self.bank_schema = _BANK_SCHEMAS[self.quant_format]
+         self.bank_sources: dict[str, list[torch.Tensor]] = {}
++        self._ssd_expert_source = None
+         self.bank_caches: dict[str, torch.Tensor] = {}
+         # per-layer host residency: the GPU movement paths require "pinned"; LOCKED/PAGEABLE layers decode on the CPU executor (locked_hybrid ones also from their slots) and prefill via copy_missing's pageable branch
+         # _unpinned_layers is the derived id set the hot paths test against
+@@ -574,7 +575,7 @@ class OffloadMoeCache:
+
+     def _build_copy_plan(self) -> None:
+         self._build_fused_copy_plan()
+-        if self._copy_fused_ok or self.device.type != "cuda" or not self.banks:
++        if self._ssd_expert_source is not None or self._copy_fused_ok or self.device.type != "cuda" or not self.banks:
+             return
+         for k, name in enumerate(self.bank_schema):
+             for rows in self._row_bytes:
+@@ -603,7 +604,7 @@ class OffloadMoeCache:
+         self._gather_feat_bytes: list[torch.Tensor | None] = []
+         self._gather_stage_ptrs: list[list[torch.Tensor] | None] = []
+         self._gather_pool_ptrs: list[torch.Tensor | None] = []
+-        if not _FUSED_COPY or self.device.type != "cuda" or not self.banks:
++        if self._ssd_expert_source is not None or not _FUSED_COPY or self.device.type != "cuda" or not self.banks:
+             return
+         from freetoken.kernel.pinned import device_ptr
+
+@@ -1258,6 +1259,9 @@ class OffloadMoeCache:
+         assert self.banks, "set_bank_sources must register the banks first"
+         layer_id = self._pending_src_layer
+         assert layer_id is not None, "no staged misses (ensure_experts/materialize_layer first)"
++        if self._ssd_expert_source is not None:
++            self._ssd_expert_source.copy_missing(self, layer_id, whole_layer=self._pending_whole_layer)
++            return
+         if layer_id in self._unpinned_layers:
+             if not self._pending_whole_layer:
+                 if layer_id in self.locked_hybrid:
+diff --git a/python/freetoken/scheduler/cache.py b/python/freetoken/scheduler/cache.py
+index 1b464e9..11566c5 100644
+--- a/python/freetoken/scheduler/cache.py
++++ b/python/freetoken/scheduler/cache.py
+@@ -62,6 +62,7 @@ class CacheManager:
+         self.page_table = page_table
+         self.page_size = page_size
+         self.cache_type = type
++        self.ssd_prefix = None
+         # radix_lookahead keys position i by (t_i, t_{i+1}), so a hit also matches the token after it and a draft whose KV slot i depends on t_{i+1} (MTP) never reuses a slot written for a different next token
+         assert not (radix_lookahead and self.is_swa), "the SWA radix cache keeps token keys"
+         self.radix_lookahead = radix_lookahead
+@@ -113,7 +114,10 @@ class CacheManager:
+             m = self.prefix_cache.match_prefix(ids)
+             return MatchResult(
+                 HybridCacheHandle(m.cached_len, m.node, m.kv_indices), mamba_value=m.mamba_value)
+-        return self.prefix_cache.match_prefix(ids)
++        match = self.prefix_cache.match_prefix(ids)
++        if self.ssd_prefix is not None and self.ssd_prefix.restore(ids, self, match.cuda_handle.cached_len):
++            return self.prefix_cache.match_prefix(ids)
++        return match
+
+     @property
+     def available_size(self) -> int:
+@@ -306,6 +310,10 @@ class CacheManager:
+         # [new_handle.cached_len, req.cached_len)   This part is tailing part that can not inserted into the prefix cache.
+         #                                           We should free it if the request has finished.
+         page_indices = self.page_table[req.table_idx, : req.cached_len]
++        if self.ssd_prefix is not None and finished and not req.aborted:
++            length = min(req.cached_len, req.prompt_len - 1)
++            if length > 0:
++                self.ssd_prefix.save(req.input_ids[:length], page_indices[:length])
+         old_handle = req.cache_handle
+         insert_ids = self._keys(req.input_ids, req.cached_len)
+         cached_len, new_handle = self.prefix_cache.insert_prefix(insert_ids, page_indices[: len(insert_ids)])
+@@ -601,6 +609,8 @@ class CacheManager:
+
+     def flush(self) -> int:
+         """Evict every unlocked prefix-cache entry and return the number of tokens freed."""
++        if self.ssd_prefix is not None:
++            self.ssd_prefix.clear()
+         evictable = (self.prefix_cache.full_evictable_size if (self.is_hybrid or self.is_swa)
+                      else self.prefix_cache.size_info.evictable_size)
+         evicted = self._evict(evictable)
+diff --git a/python/freetoken/scheduler/scheduler.py b/python/freetoken/scheduler/scheduler.py
+index 6be53e4..2d66676 100644
+--- a/python/freetoken/scheduler/scheduler.py
++++ b/python/freetoken/scheduler/scheduler.py
+@@ -95,6 +95,13 @@ class Scheduler(SchedulerIOMixin):
+             ) or getattr(self.engine.kv_cache, "sliding_window_size", None),
+             radix_lookahead=self.spec is not None and self.spec.radix_lookahead,
+         )
++        if config.experimental_ssd_kv is not None:
++            from freetoken.kvcache.mha_pool import MHAKVCache
++            from longctx.freetoken_ssd_kv import SSDPrefixCheckpoint
++
++            if type(self.engine.kv_cache) is not MHAKVCache:
++                raise ValueError("SSD KV requires a plain MHA cache pool")
++            self.cache_manager.ssd_prefix = SSDPrefixCheckpoint.from_engine(config, self.engine.kv_cache)
+         token_headroom = config.decode_rows_per_req - 1
+         self.decode_manager = DecodeManager(config.page_size, token_headroom=token_headroom)
+         self._bidirectional_mm = any(getattr(g, "bidirectional_mm_blocks", False) for g in config.model_config.attention_groups)
+@@ -312,7 +319,7 @@ class Scheduler(SchedulerIOMixin):
+         # backend's per-batch SNAPSHOT (staged in prepare_for_replay right before the replay, on
+         # the same stream, like the generic out_loc copy_from), not the live slot maps -- so the
+         # next batch's allocate_paged cannot corrupt the in-flight graph replay. DSV4 overlaps.
+-        if ENV.DISABLE_OVERLAP_SCHEDULING or self.spec is not None:
++        if ENV.DISABLE_OVERLAP_SCHEDULING or self.spec is not None or self.cache_manager.ssd_prefix is not None:
+             with self.engine_stream_ctx:
+                 self.engine.stream.wait_stream(self.stream)
+                 while True:
+@@ -823,7 +830,11 @@ class Scheduler(SchedulerIOMixin):
+             self.prefill_manager.runnable or self.decode_manager.runnable
+         ):
+             self._pending_flush = None
+-            freed = self.cache_manager.flush()
++            try:
++                freed = self.cache_manager.flush()
++            except OSError as exc:
++                self._reply_flush(msg.request_id, "unsupported", f"SSD KV checkpoint could not be removed: {exc}")
++                return
+             self.cache_manager.check_integrity()
+             logger.info_rank0(f"Cache flushed: {freed} prefix-cache tokens freed")
+             self._reply_flush(msg.request_id, "ok")
+diff --git a/python/freetoken/server/args.py b/python/freetoken/server/args.py
+index 968b406..4b077d6 100644
+--- a/python/freetoken/server/args.py
++++ b/python/freetoken/server/args.py
+@@ -933,6 +933,32 @@ def parse_args(
+         ),
+     )
+
++    parser.add_argument(
++        "--experimental-ssd-kv",
++        metavar="PATH",
++        help="Keep one bounded BF16 KV prefix checkpoint at this local path (experimental).",
++    )
++
++    parser.add_argument(
++        "--experimental-ssd-kv-limit-mib",
++        type=int,
++        default=ServerArgs.experimental_ssd_kv_limit_mib,
++        help="Size limit for the experimental KV checkpoint (16-1024 MiB).",
++    )
++
++    parser.add_argument(
++        "--experimental-ssd-experts",
++        action="store_true",
++        help="Read Qwen3 MoE GGUF expert weights on demand from the model file (experimental).",
++    )
++
++    parser.add_argument(
++        "--experimental-ssd-expert-staging-mib",
++        type=int,
++        default=ServerArgs.experimental_ssd_expert_staging_mib,
++        help="Maximum expert staging buffer size (4-32 MiB).",
++    )
++
+     parser.add_argument(
+         "--disable-moe-prefill-overlap",
+         action="store_false",

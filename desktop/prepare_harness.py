@@ -304,6 +304,7 @@ describe('pressure measurement and retention', () => {""")])
     copyKey: () => ipcRenderer.invoke('local-longctx:copy-key'),
     pick: (kind: 'model' | 'engine') => ipcRenderer.invoke('local-longctx:pick', kind),
     start: (settings: unknown) => ipcRenderer.invoke('local-longctx:start', settings),
+    saveStartup: (settings: unknown) => ipcRenderer.invoke('local-longctx:save-startup', settings),
     stop: () => ipcRenderer.invoke('local-longctx:stop'),
     connection: () => ipcRenderer.invoke('local-longctx:connection'),
     cacheStatus: () => ipcRenderer.invoke('local-longctx:cache-status'),

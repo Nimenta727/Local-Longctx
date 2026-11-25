@@ -1,8 +1,8 @@
 # 源码预发行 / Source release
 
-当前版本 / Current version **v0.3.0-alpha.4** · Python `0.3.0a4`
+当前版本 / Current version **v0.3.0-alpha.5** · Python `0.3.0a5`
 
-从已发布版本下载 GitHub 生成的 ZIP 或 tar.gz。桌面用户按固定 Harness 指南准备源码和依赖。 / Download the GitHub source archive and follow the pinned desktop setup if needed. [GitHub Release](https://github.com/Nimenta727/Local-Longctx/releases/tag/v0.3.0-alpha.4) · [桌面指南 / Desktop guide](../desktop/README.md)
+从已发布版本下载 GitHub 生成的 ZIP 或 tar.gz。桌面用户按固定 Harness 指南准备源码和依赖。 / Download the GitHub source archive and follow the pinned desktop setup if needed. [GitHub Release](https://github.com/Nimenta727/Local-Longctx/releases/tag/v0.3.0-alpha.5) · [桌面指南 / Desktop guide](../desktop/README.md)
 
 ## 维护者发行步骤 / Maintainer workflow
 
@@ -11,8 +11,8 @@
 3. 推送候选提交，再用其完整 SHA 创建 GitHub 预发行版，确认标签指向该提交并检查发行说明。
 
 ```bash
-gh release create v0.3.0-alpha.4 --target "$(git rev-parse HEAD)" \
-  --prerelease --title "Local-Longctx Studio v0.3.0-alpha.4" \
+gh release create v0.3.0-alpha.5 --target "$(git rev-parse HEAD)" \
+  --prerelease --title "Local-Longctx Studio v0.3.0-alpha.5" \
   --notes-file RELEASE_NOTES.md
 ```
 

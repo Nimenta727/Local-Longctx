@@ -1,6 +1,7 @@
 """Select only a FreeToken-compatible NVIDIA device; no fallback."""
 from dataclasses import dataclass,asdict
-from .hardware import detect,GIB
+from .config import host_weight_estimate_gib
+from .hardware import detect
 
 @dataclass(frozen=True)
 class Decision:
@@ -20,7 +21,7 @@ def choose(c,hw):
     gpu=max(hw.nvidia,key=lambda x:x.free_gib,default=None)
     if not gpu or gpu.free_gib<c.freetoken_min_vram_gib:
         raise ValueError("no eligible NVIDIA GPU")
-    host=c.host_weights_gib if c.host_weights_gib is not None else c.model.stat().st_size/GIB
+    host=host_weight_estimate_gib(c)
     if hw.ram_available_gib is None or hw.ram_available_gib<host+c.ram_headroom_gib:
         raise ValueError("insufficient measured available RAM for conservative host estimate")
     ratio=min(c.freetoken_memory_ratio,(gpu.free_gib-c.vram_headroom_gib)/gpu.free_gib)

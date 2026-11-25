@@ -31,7 +31,8 @@ class CacheTests(unittest.TestCase):
             config = SimpleNamespace(model=model, freetoken_server=engine, state_dir=state,
                                      context=8192, output_reserve=1024, ubatch=512,
                                      kv_cache_dtype="auto", freetoken_memory_ratio=.8,
-                                     kv_tokens=0, expert_slots=0)
+                                     kv_tokens=0, expert_slots=0, moe_strategy="offload",
+                                     ssd_experts_enabled=False)
             backend = Mock()
             backend.decision.gpu_uuid = "gpu"
             backend.json.return_value = {"status": "ok"}
@@ -66,6 +67,9 @@ class CacheTests(unittest.TestCase):
 
             backend.decision.gpu_uuid = "gpu"
             path = profile_path(backend, config)
+            config.ssd_experts_enabled = True
+            self.assertEqual(restore(backend, config), "default")
+            config.ssd_experts_enabled = False
             for damaged in ("{", "null", '{"kv_tokens":64.0}'):
                 path.write_text(damaged, encoding="utf-8")
                 backend.json.reset_mock()

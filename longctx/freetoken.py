@@ -10,7 +10,7 @@ def command(c,d):
             "--port",str(c.backend_port),"--gpu",d.gpu_uuid,
             "--max-running-requests","1","--max-output-tokens",str(c.output_reserve),
             "--max-seq-len-override",str(c.context),"--max-prefill-length",str(d.prefill_chunk),
-            "--memory-ratio",str(d.memory_ratio),"--moe-strategy","auto","--cache-type","radix",
+            "--memory-ratio",str(d.memory_ratio),"--moe-strategy",c.moe_strategy,"--cache-type","radix",
             "--kv-cache-dtype",c.kv_cache_dtype,
             "--moe-cpu-threads",str(d.threads),"--kv-reserve-tokens",str(min(c.context,c.kv_tokens or 8192)),
             "--enable-cache-report","--enable-timings-report"]
@@ -18,6 +18,12 @@ def command(c,d):
         args += ["--num-tokens",str(c.kv_tokens)]
     if c.expert_slots:
         args += ["--moe-cache-size",str(c.expert_slots)]
+    if c.ssd_experts_enabled:
+        args += ["--experimental-ssd-experts","--experimental-ssd-expert-staging-mib",
+                 str(c.ssd_expert_staging_mib),"--cuda-graph-max-bs","0","--disable-moe-prefill-overlap"]
+    if c.ssd_kv_enabled:
+        args += ["--experimental-ssd-kv",str((c.state_dir / "runtime-cache" / "ssd-kv.bin").resolve()),
+                 "--experimental-ssd-kv-limit-mib",str(c.ssd_kv_limit_mib)]
     return args
 
 class FreeTokenBackend(Backend):
@@ -44,6 +50,10 @@ class FreeTokenBackend(Backend):
                 if stop_event is not None and stop_event.is_set():
                     raise BackendError("desktop startup cancelled")
                 if self.proc.poll() is not None:
+                    if c.ssd_kv_enabled:
+                        raise BackendError("FreeToken exited in SSD KV checkpoint mode; select the patched engine and inspect freetoken.log")
+                    if c.ssd_experts_enabled:
+                        raise BackendError("FreeToken exited in SSD expert mode; select the patched engine and inspect freetoken.log")
                     raise BackendError("FreeToken exited; inspect freetoken.log")
                 try:
                     models=self.json("/v1/models",timeout=2)

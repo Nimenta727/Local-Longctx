@@ -2,7 +2,7 @@
 
 | Component / 组件 | License and scope / 许可与范围 |
 | --- | --- |
-| [FreeToken](https://github.com/FlashML-org/FreeToken) | Apache-2.0 upstream engine; external trusted executable, not bundled / 上游计算引擎，外部可信程序，不随仓库打包 |
+| [FreeToken](https://github.com/FlashML-org/FreeToken) | Apache-2.0 upstream engine; optional source patch against `94938a6a576926d384986fbe8cd7f1a4eb6d687e` / 上游计算引擎，提供针对固定修订版的可选源码补丁 |
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | MIT; pinned source overlay; original MIT notices remain / 固定源码覆盖，保留原 MIT 声明 |
 | Python | PSF; standard library / 标准库 |
 | Models / 模型 | User-provided, separately licensed / 用户提供，各自授权 |

@@ -1,24 +1,26 @@
-# Local-Longctx Studio v0.3.0-alpha.4
+# Local-Longctx Studio v0.3.0-alpha.5
 
 源码预发行 / Source prerelease · Python 3.10+ · Apache-2.0
 
 ## 本版更新 / What's new
 
-- **Harness 请求预算**。发送前估算新消息、系统提示与工具定义。引擎对完整原生 Messages 请求计数，超限错误列出实际预算明细。
-- **长工具结果归档**。大型文本可保存到本地，模型看到首尾、预算内的原始错误行和全文路径。
-- **带出处的任务状态与中英召回**。检查点可保留原文里的约束、决策、失败原因和待办。检索优先字面命中，再用本地中英工程术语补充。
-- **稳定性**。并发写入共享版本保护，事务异常时回滚并关闭连接。损坏缓存方案可通过重新应用修复，恢复成功以原生容量复核为准。桌面只接受本次启动的工作进程就绪，网关拒绝格式错误的引擎响应。
+- **实验性 SSD 总开关默认关闭。** 关闭时使用原有 RAM 和显存调节范围，启动时禁用 SSD 专家读取和 KV 检查点。开启后可分别启用两项功能，保存后重启生效。
+- **专家权重按需读取。** 在兼容的 Qwen3 MoE GGUF 上，解码缓存未命中时按专家从模型文件读取。专家暂存上限可调 4–32 MiB，默认 4 MiB。
+- **KV 前缀检查点。** 可将请求结束后的 BF16 KV 前缀写入本地数据目录，重启后匹配前缀时还原。单个文件上限可调 16–1024 MiB，默认 256 MiB。活动 KV 仍在显存。
+- **桌面启动设置。** 可设置 MoE 策略、显存比例、RAM 和显存余量及主机权重估算。现有 Cache 面板继续提供空闲时的容量调节。
 
-This release adds unified request budgeting, local archives for large tool outputs, source-linked task state, and bilingual recall. It also hardens session transactions, cache restoration, worker readiness, and gateway response handling.
+SSD is opt-in, with separate controls for on-demand expert reads and a persistent BF16 KV prefix checkpoint. The desktop exposes startup memory budgets alongside the existing idle cache sliders.
 
-## 使用与升级 / Getting started and upgrading
+## 上机试用 / Getting started
 
-1. 从发行页下载源码，或检出 `v0.3.0-alpha.4`。运行 `python -m longctx --version` 应显示 `0.3.0a4`。
-2. 桌面用户准备一份新的固定 Harness 覆盖层，然后构建并运行 `python desktop/launch_dev.py`。在模型设置中启动引擎并选择 Local-Longctx 预设。 [桌面构建和启动 / Desktop setup](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.4/desktop/README.md)
-3. 如果旧数据位于旧 checkout，先退出桌面和推理服务，再把 `LOCAL_LONGCTX_DATA_DIR` 指向原目录或其完整备份。直接调用网关的客户端可继续读取和写入旧受管会话，检索索引会按需从原文重建。 [CLI 与 API 指南 / CLI and API guide](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.4/docs/usage.md)
-
-Download or check out this tag, prepare a fresh desktop overlay, and select the Local-Longctx preset. Point `LOCAL_LONGCTX_DATA_DIR` to the previous data directory or a full copy when migrating between checkouts.
+1. 下载本版源码。运行 `python -m longctx --version` 应显示 `0.3.0a5`。桌面用户需要用新源码准备固定版本的 Harness 覆盖层。迁移时先退出旧服务，再将 `LOCAL_LONGCTX_DATA_DIR` 指向原数据目录或完整备份。 [桌面构建与数据迁移](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.5/desktop/README.md)
+2. 先保持 SSD 关闭，启动引擎并发送固定短提示，记录输出和首 Token 延迟。试用 SSD 时，按指南安装固定版本的 FreeToken 及本版补丁，选择兼容的单文件 Qwen3 MoE GGUF。在「启动参数」打开实验性 SSD 总开关，再选择子功能。旧配置也需要显式打开总开关。 [补丁安装与 GPU 验收](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.5/docs/testing.md#freetoken-专家换入实验)
+3. 试用 KV 恢复时，把本地数据目录放在 SSD 上。完成请求后重启，再发送相同提示，比较输出、缓存命中 token 数和首 Token 延迟。 [文件位置、清理与验证](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.5/docs/testing.md#ssd-kv-前缀检查点实验)
 
 ## 验证范围 / Verification
 
-38 项 Python 测试、245 项 Harness 与桌面相关测试及涉及模块的 TypeScript 检查通过。固定离线回放中，受管会话的证据覆盖从 8/9 提升至 9/9。完整 Electron 运行、GPU 性能和模型任务完成率仍待实测。本版提供源码归档。 / 38 Python tests, 245 focused Harness and desktop tests, and TypeScript checks passed. The offline fixture recovered 9 of 9 evidence items. Full Electron, GPU, and model-quality measurements remain pending. [验证方法 / Verification](https://github.com/Nimenta727/Local-Longctx/blob/v0.3.0-alpha.4/docs/testing.md)
+44 项 Python 测试、桌面 SSD 设置回归和定向 TypeScript 检查通过。已验证 FreeToken 补丁可应用到固定修订版，CPU 侧验证了专家张量读取和 KV 页恢复。完整 Electron 会话、NVIDIA 实机生成、低 RAM 稳定性和 SSD 性能仍待验证。本版提供源码归档和 FreeToken 补丁。
+
+更广的 Harness 回归共 245 项，231 项通过，工具输出回归的 14 项在本环境出现 Node 子进程文件描述符错误及超时。
+
+The source prerelease includes the FreeToken patch. CPU checks cover expert tensor reads and KV restoration. The broader Harness run passed 231 of 245 tests. The 14 tool-output failures involved Node child-process file descriptors and timeouts. Full Electron and NVIDIA runtime validation are pending.

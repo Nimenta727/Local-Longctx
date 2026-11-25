@@ -1,8 +1,12 @@
 """Desktop capability contract / 桌面功能与参数预检契约。"""
 
+from .config import MOE_STRATEGIES
+
 TARGET=1_000_000
 MODES=("exact","compressed","adaptive","virtual")
-SETTINGS=("context","output_reserve","ubatch","threads","freetoken_memory_ratio","kv_cache_dtype","kv_tokens","expert_slots")
+SETTINGS=("context","output_reserve","ubatch","threads","freetoken_memory_ratio","kv_cache_dtype","kv_tokens","expert_slots",
+          "freetoken_min_vram_gib","ram_headroom_gib","vram_headroom_gib","host_weights_gib","moe_strategy",
+          "experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint","ssd_expert_staging_mib","ssd_kv_limit_mib")
 
 def describe(c):
     return {
@@ -24,6 +28,14 @@ def describe(c):
             "managed_compact":{"status":"explicit_preview_commit_rollback"},
             "automatic_compact":{"status":"not_integrated"},
             "settings_apply":{"status":"startup_and_native_idle_rebuild_experimental"}
+        },
+        "memory_controls":{
+            "apply_while_idle":["kv_tokens","moe_experts","swa_tokens","mamba_slots"],
+            "moe_strategies":list(MOE_STRATEGIES),
+            "ssd_kv_offload":False,
+            "experimental_ssd":c.experimental_ssd,
+            "ssd_kv_checkpoint":c.ssd_kv_enabled,
+            "ssd_expert_offload":c.ssd_experts_enabled,
         },
         "settings":{k:getattr(c,k) for k in SETTINGS},
         "frontend":{"target":"Local-Longctx Studio / Harness","source_status":"pinned_overlay"},

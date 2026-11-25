@@ -35,6 +35,16 @@ Select the executable and GGUF, verify compatibility, and start the engine. Then
 
 The local preset budgets each request, preserves source-linked task excerpts, and recalls evidence from the current session. Large tool results can be read from their local spill path. The Cache panel persists approved capacities and checks them against actual allocation after restart. FreeToken rebuilds live cache tensors.
 
+## 内存设置何时生效 / When memory settings take effect
+
+- **空闲时立即应用**。Cache 面板可重建引擎可调的 KV、MoE 专家、SWA 和 GDN 池。容量和步长来自当前引擎。
+- **下次启动应用**。模型设置可在引擎运行时保存 MoE 策略、显存比例、最低空闲显存、RAM/显存余量、主机权重估算，以及窗口和 KV 精度等启动参数。当前运行配置单独显示。应用这些参数需停止后重新启动。
+- **实验性 SSD 总开关**。默认关闭，模型设置保留原来的 RAM 和显存调节范围，启动时禁用 SSD 专家读取和 KV 检查点。开启后显示 SSD 子开关和滑杆。保存的子选项在总开关关闭时休眠，启动参数在重启后生效。旧配置需要显式打开总开关。
+- **SSD 专家权重**。将专家策略选为 `Offload`，勾选按需读取专家权重。通过滑杆设置单个专家的锁页暂存上限（4–32 MiB，默认 4 MiB），实际缓冲区按模型需要分配。需要打过补丁的 FreeToken、SSD 上的单文件 Qwen3 MoE GGUF，以及在桌面和引擎的 Python 环境安装 `ssd-research`。[补丁安装和验证](../docs/testing.md#freetoken-专家换入实验)
+- **SSD KV 前缀检查点**。KV 精度设为 `Auto` 并勾选保存检查点，通过滑杆设定单个文件上限（16–1024 MiB，默认 256 MiB）。实际 KV 精度须为 BF16。活动 KV 仍在显存。关闭开关会停止读写，已有文件可在停止引擎后删除。[文件位置与验证](../docs/testing.md#ssd-kv-前缀检查点实验)
+
+The Cache panel resizes native pools when idle. The experimental SSD switch reveals separate controls for expert streaming and a persistent KV prefix checkpoint. Startup settings take effect on restart. Active KV paging to SSD is pending.
+
 ## 数据位置与升级 / Data and upgrades
 
 模型设置中的「打开本地数据目录」可定位会话、附件、设置、日志和运行时缓存。默认目录如下。

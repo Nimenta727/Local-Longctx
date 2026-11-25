@@ -21,6 +21,12 @@ class TestCore(unittest.TestCase):
             decision=choose(c,hw)
             self.assertEqual(decision.engine,"freetoken")
             self.assertIn("--kv-cache-dtype",command(c,decision))
+            for strategy in ("auto", "offload", "fused", "cpu", "hybrid"):
+                selected = replace(c, moe_strategy=strategy).validate()
+                flags = command(selected, decision)
+                self.assertEqual(flags[flags.index("--moe-strategy")+1], strategy)
+            with self.assertRaisesRegex(ValueError, "unsupported MoE strategy"):
+                replace(c, moe_strategy="ssd").validate()
             for bad in (replace(hw,nvidia=()),replace(hw,ram_available_gib=None)):
                 with self.assertRaises(ValueError):
                     choose(c,bad)

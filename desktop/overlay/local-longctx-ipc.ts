@@ -11,6 +11,13 @@ const integer=(v:unknown,min:number,max:number):number=>{
   if(typeof v!=='number'||!Number.isInteger(v)||v<min||v>max) throw new Error('Invalid integer setting')
   return v
 }
+const moeStrategies=['auto','offload','fused','cpu','hybrid']
+const positive=(value:unknown, fallback:number, label:string):number=>{
+  const v=value===undefined?fallback:value
+  if(typeof v!=='number'||!Number.isFinite(v)||v<=0)throw new Error('Invalid '+label)
+  return v
+}
+
 export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWindow):void {
   let phase:Phase='idle',detail=''
   let model:string|null=null,engine:string|null=null
@@ -22,13 +29,19 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
   const stateDir=join(app.getPath('userData'),'local-longctx')
   const config=join(stateDir,'config.json')
   let settings:Record<string,unknown>|undefined
+  let activeSettings:ReturnType<typeof startupDraft>['settings']|undefined
   const restoreSettings=async()=>{
     try {
       const saved=JSON.parse(await readFile(config,'utf8')) as Record<string,unknown>
       if(typeof saved.model==='string'&&saved.model.toLowerCase().endsWith('.gguf')&&await stat(saved.model).then(s=>s.isFile(),()=>false))model=saved.model
       if(typeof saved.freetoken_server==='string'&&!/\.(bat|cmd|ps1|sh)$/i.test(saved.freetoken_server)&&await stat(saved.freetoken_server).then(s=>s.isFile(),()=>false))engine=saved.freetoken_server
       if(typeof saved.context==='number'&&typeof saved.model_limit==='number'&&typeof saved.output_reserve==='number'&&typeof saved.threads==='number'&&typeof saved.freetoken_memory_ratio==='number'&&typeof saved.kv_cache_dtype==='string'&&typeof saved.kv_tokens==='number'&&typeof saved.expert_slots==='number'&&typeof saved.ubatch==='number'){
-        settings={context:saved.context,modelLimit:saved.model_limit,output:saved.output_reserve,threads:saved.threads,ratio:saved.freetoken_memory_ratio,dtype:saved.kv_cache_dtype,kvTokens:saved.kv_tokens,expertSlots:saved.expert_slots,prefill:saved.ubatch}
+        settings={context:saved.context,modelLimit:saved.model_limit,output:saved.output_reserve,threads:saved.threads,ratio:saved.freetoken_memory_ratio,dtype:saved.kv_cache_dtype,kvTokens:saved.kv_tokens,expertSlots:saved.expert_slots,prefill:saved.ubatch,
+          moeStrategy:saved.moe_strategy??'auto',minVram:saved.freetoken_min_vram_gib??4,
+          vramHeadroom:saved.vram_headroom_gib??1,ramHeadroom:saved.ram_headroom_gib??2,
+          hostWeights:saved.host_weights_gib??null,ssdExpertOffload:saved.ssd_expert_offload===true,
+          ssdKvCheckpoint:saved.ssd_kv_checkpoint===true,experimentalSsd:saved.experimental_ssd===true,
+          ssdExpertStagingMib:saved.ssd_expert_staging_mib??4,ssdKvLimitMib:saved.ssd_kv_limit_mib??256}
       }
     } catch(error) {
       if(!(error instanceof Error&&'code' in error&&error.code==='ENOENT'))detail='Saved inference settings could not be read'
@@ -45,7 +58,7 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     if(!/^[0-9a-f]{64}$/.test(saved))throw new Error('Invalid local gateway key file')
     return saved
   }
-  const status=()=>({phase,detail,settings,model:model===null?null:basename(model),engine:engine===null?null:basename(engine)})
+  const status=()=>({phase,detail,settings,activeSettings,model:model===null?null:basename(model),engine:engine===null?null:basename(engine)})
   const ensureIdle=()=>{if(operation||child||['starting','ready','stopping'].includes(phase))throw new Error('Engine is busy')}
   ipcMain.handle(PREFIX+'status',async event=>{owner(event);await restored;return status()})
   ipcMain.handle(PREFIX+'open-data',async event=>{
@@ -68,9 +81,7 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
       return status()
     }finally{operation=false}
   })
-  ipcMain.handle(PREFIX+'start',async(event,raw:unknown)=>{
-    const window=owner(event);await restored;ensureIdle()
-    if(app.isPackaged||!root||!python)throw new Error('Local-Longctx development runtime is not configured')
+  const startupDraft=(raw:unknown)=>{
     if(!model||!engine||typeof raw!=='object'||raw===null)throw new Error('Select model and engine first')
     const s=raw as Record<string,unknown>
     const ctx=integer(s.context,1024,1000000),limit=integer(s.modelLimit,ctx,2097152)
@@ -78,28 +89,73 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     if(s.verified!==true||typeof s.ratio!=='number'||!Number.isFinite(s.ratio)||s.ratio<.1||s.ratio>.95||typeof s.dtype!=='string'||!['auto','int8_per_token_head','fp8_per_token_head'].includes(s.dtype))throw new Error('Invalid or unverified configuration')
     const kvTokens=integer(s.kvTokens??0,0,2097152),expertSlots=integer(s.expertSlots??0,0,1000000)
     const prefill=integer(s.prefill??512,1,ctx)
+    const moeStrategy=s.moeStrategy??'auto'
+    if(typeof moeStrategy!=='string'||!moeStrategies.includes(moeStrategy))throw new Error('Invalid MoE strategy')
+    const experimentalSsd=s.experimentalSsd===undefined?false:s.experimentalSsd
+    if(typeof experimentalSsd!=='boolean')throw new Error('Invalid experimental SSD setting')
+    const ssdExpertOffload=s.ssdExpertOffload===undefined?false:s.ssdExpertOffload
+    if(typeof ssdExpertOffload!=='boolean')throw new Error('Invalid SSD expert offload setting')
+    if(experimentalSsd&&ssdExpertOffload&&moeStrategy!=='offload')throw new Error('SSD expert offload requires MoE strategy offload')
+    const ssdKvCheckpoint=s.ssdKvCheckpoint===undefined?false:s.ssdKvCheckpoint
+    if(typeof ssdKvCheckpoint!=='boolean')throw new Error('Invalid SSD KV checkpoint setting')
+    if(experimentalSsd&&ssdKvCheckpoint&&s.dtype!=='auto')throw new Error('SSD KV checkpoint requires Auto KV precision')
+    const ssdExpertStagingMib=integer(s.ssdExpertStagingMib??4,4,32)
+    const ssdKvLimitMib=integer(s.ssdKvLimitMib??256,16,1024)
+    const minVram=positive(s.minVram,4,'minimum free VRAM')
+    const vramHeadroom=positive(s.vramHeadroom,1,'VRAM headroom')
+    const ramHeadroom=positive(s.ramHeadroom,2,'RAM headroom')
+    const hostWeights=s.hostWeights==null?null:positive(s.hostWeights,0,'host weights estimate')
+    return {
+      config:{freetoken_server:engine,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,
+        context:ctx,model_limit:limit,logical_target:1000000,output_reserve:out,threads,ubatch:prefill,
+        kv_tokens:kvTokens,expert_slots:expertSlots,freetoken_memory_ratio:s.ratio,kv_cache_dtype:s.dtype,state_dir:stateDir,
+        moe_strategy:moeStrategy,freetoken_min_vram_gib:minVram,vram_headroom_gib:vramHeadroom,
+        ram_headroom_gib:ramHeadroom,host_weights_gib:hostWeights,ssd_expert_offload:ssdExpertOffload,
+        experimental_ssd:experimentalSsd,ssd_kv_checkpoint:ssdKvCheckpoint,
+        ssd_expert_staging_mib:ssdExpertStagingMib,ssd_kv_limit_mib:ssdKvLimitMib},
+      settings:{context:ctx,modelLimit:limit,output:out,threads,ratio:s.ratio,dtype:s.dtype,kvTokens,expertSlots,prefill,
+        moeStrategy,minVram,vramHeadroom,ramHeadroom,hostWeights,experimentalSsd,
+        ssdExpertOffload,ssdKvCheckpoint,ssdExpertStagingMib,ssdKvLimitMib},
+    }
+  }
+  const writeConfig=async (draft:ReturnType<typeof startupDraft>)=>{
+    await mkdir(stateDir,{recursive:true,mode:0o700})
+    const temporary=config+'.'+randomBytes(8).toString('hex')+'.tmp'
+    try{
+      await writeFile(temporary,JSON.stringify(draft.config,null,2),{flag:'wx',mode:0o600})
+      await rename(temporary,config)
+    }finally{await rm(temporary,{force:true})}
+    settings=draft.settings
+  }
+  ipcMain.handle(PREFIX+'save-startup',async(event,raw:unknown)=>{
+    owner(event);await restored
+    if(operation||phase==='starting'||phase==='stopping')throw new Error('Engine is busy')
+    const draft=startupDraft(raw)
+    operation=true
+    try{await writeConfig(draft);return status()}finally{operation=false}
+  })
+  ipcMain.handle(PREFIX+'start',async(event,raw:unknown)=>{
+    const window=owner(event);await restored;ensureIdle()
+    if(app.isPackaged||!root||!python)throw new Error('Local-Longctx development runtime is not configured')
+    const draft=startupDraft(raw)
+    const {context:ctx,output:out}=draft.settings
     operation=true
     try{
-      const approved=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Start trusted local engine'],defaultId:0,cancelId:0,message:'Start selected executable?',detail:engine+'\n'+model})
+      const approved=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Start trusted local engine'],defaultId:0,cancelId:0,message:'Start selected executable?',detail:draft.config.freetoken_server+'\n'+draft.config.model})
       if(approved.response!==1)return status()
       await mkdir(stateDir,{recursive:true,mode:0o700})
-      const body={freetoken_server:engine,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,context:ctx,model_limit:limit,logical_target:1000000,output_reserve:out,threads,ubatch:prefill,kv_tokens:kvTokens,expert_slots:expertSlots,freetoken_memory_ratio:s.ratio,kv_cache_dtype:s.dtype,state_dir:stateDir}
       const nextKey=await profileKey()
-      const draft=config+'.'+randomBytes(8).toString('hex')+'.tmp'
-      try{
-        await writeFile(draft,JSON.stringify(body,null,2),{flag:'wx',mode:0o600})
-        await rename(draft,config)
-      }finally{await rm(draft,{force:true})}
+      await writeConfig(draft)
       key=nextKey;context=ctx;output=out
-      settings={context:ctx,modelLimit:limit,output:out,threads,ratio:s.ratio,dtype:s.dtype,kvTokens,expertSlots,prefill}
+      activeSettings=draft.settings
       phase='starting';detail=''
       const proc=spawn(python,['-m','longctx.desktop_worker',config],{cwd:root,shell:false,windowsHide:true,env:{...process.env,LOCAL_LONGCTX_API_KEY:key},stdio:['pipe','ignore','ignore']})
       child=proc
       proc.stdin?.on('error',()=>{})
-      proc.once('error',()=>{if(child===proc){child=undefined;key='';phase='error';detail='Worker failed to start'}})
+      proc.once('error',()=>{if(child===proc){child=undefined;key='';activeSettings=undefined;phase='error';detail='Worker failed to start'}})
       proc.once('exit',(code,signal)=>{
         if(child!==proc)return
-        child=undefined;key=''
+        child=undefined;key='';activeSettings=undefined
         if(phase==='stopping'&&detail===''&&code===0){phase='idle';return}
         phase='error'
         if(!detail)detail='Worker exited ('+String(code??signal)+'); inspect local logs'
@@ -151,7 +207,7 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     const changes:Record<string,number>={}
     for(const [name,value] of Object.entries(data.changes)){
       if(!['kv_tokens','moe_experts','swa_tokens','mamba_slots'].includes(name))throw new Error('Invalid cache field')
-      changes[name]=integer(value,0,2097152)
+      changes[name]=integer(value,0,Number.MAX_SAFE_INTEGER)
     }
     if(!Object.keys(changes).length)throw new Error('No cache change')
     operation=true

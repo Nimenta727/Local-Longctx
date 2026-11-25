@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-longctx"
-version = "0.3.0a4"
+version = "0.3.0a5"
 description = "Local-Longctx Studio: experimental local MoE control plane"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
+
+[project.optional-dependencies]
+ssd-research = ["gguf>=0.19,<0.20"]
 
 [project.scripts]
 longctx = "longctx.cli:main"

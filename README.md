@@ -1,6 +1,6 @@
 # Local-Longctx Studio
 
-**v0.3.0-alpha.4 · 源码预发行 / Source prerelease · Apache-2.0**
+**v0.3.0-alpha.5 · 源码预发行 / Source prerelease · Apache-2.0**
 
 Local-Longctx Studio 是面向 NVIDIA GPU 的本地 MoE 工作台。桌面和 Agent 基于固定版本的 DeepSeek Harness，推理由 FreeToken 执行。应用在本机管理会话、长工具输出和缓存容量设置。
 
@@ -11,6 +11,7 @@ Local-Longctx Studio is a local NVIDIA MoE workbench. It combines a pinned DeepS
 - **桌面长会话**。模型接近窗口预算时，Harness 可将较早历史压缩成检查点，保留带出处的任务状态，并在之后的轮次按需找回当前会话的证据。
 - **工具日志归档**。过长文本保留首尾和可用的原始诊断行，全文写入本地文件，模型可按路径读取。
 - **本地网关与缓存**。网关提供原生 Messages、文本 Chat Completions 和独立受管会话 API。Cache 面板可在空闲时应用容量设置，并在重启时重新验证实际容量。
+- **实验性 SSD**。默认关闭。显式开启后，可独立选择专家权重按需读取和 KV 前缀检查点，并通过滑杆设置各自的上限。 [桌面设置](desktop/README.md#内存设置何时生效--when-memory-settings-take-effect)
 
 The desktop supports session checkpoints, source-linked task excerpts, and archival recall. Oversized text tool results can be stored locally with a short preview. The gateway exposes native Messages, text Chat Completions, and an explicit managed-session API. Confirmed cache capacities are revalidated after restart.
 
@@ -19,7 +20,7 @@ The desktop supports session checkpoints, source-linked task excerpts, and archi
 离线检查需要 Python 3.10+，想跑本地推理还需要匹配的 NVIDIA 驱动、FreeToken 与兼容的 MoE GGUF。桌面预览另需固定 Harness 的构建工具链。 / Offline checks require Python 3.10+. Local inference also requires a compatible NVIDIA driver, FreeToken executable, and MoE GGUF. Desktop development needs the pinned Harness toolchain.
 
 ```bash
-git clone --branch v0.3.0-alpha.4 https://github.com/Nimenta727/Local-Longctx.git
+git clone --branch v0.3.0-alpha.5 https://github.com/Nimenta727/Local-Longctx.git
 cd Local-Longctx
 python -m longctx --version
 python scripts/check_release.py
@@ -30,7 +31,7 @@ python -m benchmarks.context_baseline
 - 启动 Python 网关并使用受管会话 API。 [CLI 与 API 指南 / CLI and API guide](docs/usage.md)
 - 了解上下文预算、归档和缓存的关系。 [架构 / Architecture](docs/architecture.md)
 - 查看离线回放、实机评测和验收范围。 [验证 / Verification](docs/testing.md)
-- 下载这个版本的源码。 [GitHub Release](https://github.com/Nimenta727/Local-Longctx/releases/tag/v0.3.0-alpha.4) · [发行说明 / Release notes](RELEASE_NOTES.md)
+- 下载这个版本的源码。 [GitHub Release](https://github.com/Nimenta727/Local-Longctx/releases/tag/v0.3.0-alpha.5) · [发行说明 / Release notes](RELEASE_NOTES.md)
 
 **验证范围。** 百万 Token 是逻辑历史研发目标。当前版本提供源码归档，真实 GPU 上的原生窗口、自动压缩、缓存恢复和完整桌面运行仍待实测。 / One million tokens is a logical-history research target. This source prerelease has no verified native million-token run or complete Electron and GPU validation.
 

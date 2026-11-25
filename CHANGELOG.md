@@ -1,5 +1,10 @@
 # 更新日志 / Changelog
 
+## 0.3.0-alpha.5 — 2026-11-25
+- 增加默认关闭的实验性 SSD 总开关、专家暂存上限和 KV 文件上限滑杆。 / Add a disabled-by-default SSD switch and sliders for expert staging and KV checkpoint limits.
+- 为固定版本的 FreeToken 提供实验补丁，支持 Qwen3 MoE GGUF 专家按需读取及 BF16 KV 前缀检查点。 / Add a patch for on-demand Qwen3 MoE GGUF experts and persistent BF16 prefix KV.
+- 增加 MoE 策略、显存比例、RAM 和显存余量、主机权重估算等启动设置。 / Expose model startup and memory-budget controls.
+
 ## 0.3.0-alpha.4 — 2026-11-25
 - Harness 请求统一预算，本地归档大型工具结果并保留诊断行。 / Unified request budgeting and bounded previews with archived tool output.
 - 添加任务状态出处、中英术语召回和固定评测基线。 / Source-linked task state, bilingual recall, and a reproducible context baseline.

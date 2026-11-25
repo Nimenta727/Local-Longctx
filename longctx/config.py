@@ -6,6 +6,7 @@ import math
 import re
 
 GIB=1024**3
+MOE_STRATEGIES=("auto","offload","fused","cpu","hybrid")
 
 @dataclass(frozen=True)
 class Config:
@@ -36,6 +37,20 @@ class Config:
     host_weights_gib: float | None=None
     ram_headroom_gib: float=2
     vram_headroom_gib: float=1
+    moe_strategy: str="auto"
+    experimental_ssd: bool=False
+    ssd_expert_offload: bool=False
+    ssd_kv_checkpoint: bool=False
+    ssd_expert_staging_mib: int=4
+    ssd_kv_limit_mib: int=256
+
+    @property
+    def ssd_experts_enabled(self):
+        return self.experimental_ssd and self.ssd_expert_offload
+
+    @property
+    def ssd_kv_enabled(self):
+        return self.experimental_ssd and self.ssd_kv_checkpoint
 
     @property
     def mode(self):
@@ -44,7 +59,8 @@ class Config:
     def validate(self):
         for k in ("context","model_limit","logical_target","output_reserve","ubatch",
                   "threads","api_port","backend_port","gateway_port","timeout",
-                  "attention_layers","kv_heads","head_dim","kv_tokens","expert_slots"):
+                  "attention_layers","kv_heads","head_dim","kv_tokens","expert_slots",
+                  "ssd_expert_staging_mib","ssd_kv_limit_mib"):
             if type(getattr(self,k)) is not int:
                 raise ValueError(k+" must be an integer")
         if not 0<=self.kv_tokens<=2097152 or not 0<=self.expert_slots<=1000000:
@@ -62,11 +78,19 @@ class Config:
             raise ValueError("invalid ports")
         if not 1<=self.timeout<=86400 or min(self.attention_layers,self.kv_heads,self.head_dim)<0:
             raise ValueError("invalid geometry or timeout")
+        if self.moe_strategy not in MOE_STRATEGIES:
+            raise ValueError("unsupported MoE strategy")
         if self.kv_cache_dtype not in ("auto","fp8_per_token_head","int8_per_token_head"):
             raise ValueError("unsupported native KV dtype")
-        for k in ("model_is_moe","freetoken_model_verified"):
+        for k in ("model_is_moe","freetoken_model_verified","experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint"):
             if type(getattr(self,k)) is not bool:
-                raise ValueError("invalid compatibility flag")
+                raise ValueError(k+" must be a boolean")
+        if not 4<=self.ssd_expert_staging_mib<=32 or not 16<=self.ssd_kv_limit_mib<=1024:
+            raise ValueError("invalid SSD budget")
+        if self.ssd_experts_enabled and self.moe_strategy!="offload":
+            raise ValueError("SSD expert offload requires MoE strategy offload")
+        if self.ssd_kv_enabled and self.kv_cache_dtype!="auto":
+            raise ValueError("SSD KV checkpoint requires Auto KV precision")
         for k in ("freetoken_min_vram_gib","freetoken_memory_ratio","ram_headroom_gib","vram_headroom_gib","host_weights_gib"):
             v=getattr(self,k)
             if k=="host_weights_gib" and v is None:
@@ -94,6 +118,17 @@ class Config:
         data.setdefault("state_dir",path.parent/".local-longctx")
         return cls(**data).validate()
 
+def host_weight_estimate_gib(c):
+    if c.ssd_experts_enabled:
+        from .ssd_experts import SSDExpertReader
+
+        with SSDExpertReader(c.model, c.ssd_expert_staging_mib*2**20) as reader:
+            estimate=reader.host_weight_estimate_bytes/GIB
+    else:
+        estimate=c.model.stat().st_size/GIB
+    return c.host_weights_gib if c.host_weights_gib is not None else estimate
+
+
 def memory_plan(c):
     known=all((c.attention_layers,c.kv_heads,c.head_dim))
     per_token=2*c.attention_layers*c.kv_heads*(2*c.head_dim if c.kv_cache_dtype=="auto" else c.head_dim+4)
@@ -102,4 +137,7 @@ def memory_plan(c):
             "attention_kv_estimate_gib":per_token*(c.kv_tokens or c.context)/GIB if known else None,
             "kv_dtype":c.kv_cache_dtype,"requested_kv_tokens":c.kv_tokens or None,
             "expert_slots":c.expert_slots or None,
+            "experimental_ssd":c.experimental_ssd,
+            "ssd_expert_offload":c.ssd_experts_enabled,"ssd_kv_checkpoint":c.ssd_kv_enabled,
+            "host_weight_estimate_gib":host_weight_estimate_gib(c),
             "warning":"GQA estimate only; auto assumes 16-bit. Excludes shards, recurrent state, workspace, MLA/SWA and experts. Logical target is not a native window."}

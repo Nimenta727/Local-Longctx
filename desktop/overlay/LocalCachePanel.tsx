@@ -44,7 +44,7 @@ export function CachePanel({bridge}:{bridge:CacheBridge}){
     finally{setBusy(false)}
   }
   return <section aria-label="Native cache settings">
-    <h3>Cache 配置 / Native pools</h3>
+    <h3>运行中缓存容量 / Live cache capacity</h3>
     <p>模型窗口 / Model window {snap.native_window.toLocaleString()} · KV capacity {snap.pools.kv_tokens?.value.toLocaleString()} · 活跃请求 / Active {snap.active_requests}</p>
     <div><button type="button" disabled={busy} onClick={()=>preset(false)}>Chat 16K</button> <button type="button" disabled={busy} onClick={()=>preset(true)}>Agent ≤128K</button></div>
     {Object.entries(snap.pools).filter(([,p])=>p.value>0||p.adjustable).map(([name,p])=>{

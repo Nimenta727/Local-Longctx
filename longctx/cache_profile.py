@@ -17,6 +17,11 @@ def profile_path(backend, config):
     profile = [identity(config.model), identity(config.freetoken_server),
                backend.decision.gpu_uuid, config.context, config.output_reserve, config.ubatch, config.kv_cache_dtype,
                config.freetoken_memory_ratio, config.kv_tokens, config.expert_slots]
+    # Auto uses the existing profile key so previously saved capacities carry over.
+    if config.moe_strategy != "auto":
+        profile.append(config.moe_strategy)
+    if config.ssd_experts_enabled:
+        profile.append("ssd_expert_offload")
     name = hashlib.sha256(json.dumps(profile).encode()).hexdigest()
     return config.state_dir / ("cache-" + name + ".json")
 
