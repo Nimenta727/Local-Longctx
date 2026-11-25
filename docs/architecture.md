@@ -27,4 +27,4 @@ The desktop budgets the next request, reduces large tool results, compacts balan
 
 `GET /local/cache/status` 返回当前缓存池容量、步长和预算。`POST /local/cache/apply` 需要当前配置版本、显式确认和空闲引擎。应用后的容量按模型、引擎文件、GPU 和启动参数保存，恢复时重新校验并读取实际分配值。推理中的缓存页由引擎重建。
 
-**归档长度、单轮原生窗口和实际 KV 容量分别衡量。** 百万 Token 是逻辑历史研发目标。CUDA 注意力、量化 KV 和 RAM/SSD 分层存储实验保留在研究分支。 / Archive length, native window, and KV capacity are separate measurements. The million-token logical-history target is a research goal. [研究分支 / Research archive](https://github.com/Nimenta727/Local-Longctx/tree/research/v5.2-archive)
+**归档长度、单轮原生窗口和实际 KV 容量分别衡量。** 百万 Token 是逻辑历史研发目标。CUDA 注意力、量化 KV 和 RAM/SSD 分层存储实验保留在研究归档提交。 / Archive length, native window, and KV capacity are separate measurements. The million-token logical-history target is a research goal. [研究分支 / Research archive](https://github.com/Nimenta727/Local-Longctx/tree/b982680f7a45e0ebb163a207709eceb3b54f726a)

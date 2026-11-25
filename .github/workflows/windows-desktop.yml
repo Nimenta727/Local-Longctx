@@ -30,13 +30,30 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c
         with:
           arch: x64
-      - uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d
-        with:
-          cuda: '13.0.0'
-          method: network
-          sub-packages: '["nvcc", "cudart", "nvrtc", "nvjitlink", "cccl"]'
-          use-github-cache: 'false'
-          use-local-cache: 'false'
+      - name: Prepare the NVIDIA CUDA 13.0 build tools
+        shell: pwsh
+        run: |
+          $base = 'https://developer.download.nvidia.com/compute/cuda/redist'
+          $manifest = Invoke-RestMethod "$base/redistrib_13.0.0.json"
+          $cuda = Join-Path $env:RUNNER_TEMP cuda13
+          New-Item -ItemType Directory -Path $cuda | Out-Null
+          foreach ($name in 'cuda_nvcc','cuda_crt','cuda_cccl','cuda_cudart','libnvvm') {
+            $item = $manifest.$name.'windows-x86_64'
+            $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+            curl.exe --fail --retry 3 --silent --show-error "$base/$($item.relative_path)" -o $zip
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ((Get-FileHash $zip -Algorithm SHA256).Hash -ine $item.sha256) { throw "Invalid CUDA archive $name" }
+            $expanded = Join-Path $env:RUNNER_TEMP $name
+            Expand-Archive -LiteralPath $zip -DestinationPath $expanded
+            $component = Get-ChildItem $expanded -Directory | Select-Object -First 1
+            Get-ChildItem $component.FullName -Directory | Copy-Item -Destination $cuda -Recurse -Force
+            Remove-Item $zip,$expanded -Recurse -Force
+          }
+          & "$cuda/bin/nvcc.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "CUDA_PATH=$cuda" >> $env:GITHUB_ENV
+          "CUDA_HOME=$cuda" >> $env:GITHUB_ENV
+          "$cuda/bin" >> $env:GITHUB_PATH
       - name: Stage and verify the native inference runtime
         shell: pwsh
         run: |

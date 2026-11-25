@@ -1,6 +1,6 @@
 # 研发历史 / Development history
 
-所有原始记录保存在 [V5.2 归档 / archived original logs](https://github.com/Nimenta727/Local-Longctx/tree/research/v5.2-archive/docs/routine)。Original records are preserved without rewriting Git history.
+所有原始记录保存在 [V5.2 归档 / archived original logs](https://github.com/Nimenta727/Local-Longctx/tree/b982680f7a45e0ebb163a207709eceb3b54f726a/docs/routine)。Original records are preserved without rewriting Git history.
 
 | Date / 日期 | Changes / 改动 | Next / 当时的后续方向 |
 | --- | --- | --- |
