@@ -1,4 +1,4 @@
-/** Local-only development bridge. Never accepts executable paths or command lines from renderer. */
+/** Local runtime bridge. Executable and working directory are owned by the main process. */
 import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type BrowserWindow } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -21,11 +21,13 @@ const positive=(value:unknown, fallback:number, label:string):number=>{
 export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWindow):void {
   let phase:Phase='idle',detail=''
   let model:string|null=null,engine:string|null=null
+  let ssdDirectory:string|null=null
   let child:ChildProcess|undefined
   let key='',context=0,output=0
   let operation=false
-  const root=process.env.LOCAL_LONGCTX_DEV_ROOT
-  const python=process.env.LOCAL_LONGCTX_PYTHON
+  const root=app.isPackaged?join(process.resourcesPath,'farstack-runtime'):process.env.LOCAL_LONGCTX_DEV_ROOT
+  const python=app.isPackaged&&root?join(root,'python.exe'):process.env.LOCAL_LONGCTX_PYTHON
+  if(app.isPackaged&&python)engine=python
   const stateDir=join(app.getPath('userData'),'local-longctx')
   const config=join(stateDir,'config.json')
   let settings:Record<string,unknown>|undefined
@@ -33,15 +35,18 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
   const restoreSettings=async()=>{
     try {
       const saved=JSON.parse(await readFile(config,'utf8')) as Record<string,unknown>
+      if(typeof saved.ssd_active_kv_dir==='string')ssdDirectory=saved.ssd_active_kv_dir
       if(typeof saved.model==='string'&&saved.model.toLowerCase().endsWith('.gguf')&&await stat(saved.model).then(s=>s.isFile(),()=>false))model=saved.model
-      if(typeof saved.freetoken_server==='string'&&!/\.(bat|cmd|ps1|sh)$/i.test(saved.freetoken_server)&&await stat(saved.freetoken_server).then(s=>s.isFile(),()=>false))engine=saved.freetoken_server
+      if(!app.isPackaged&&typeof saved.freetoken_server==='string'&&!/\.(bat|cmd|ps1|sh)$/i.test(saved.freetoken_server)&&await stat(saved.freetoken_server).then(s=>s.isFile(),()=>false))engine=saved.freetoken_server
       if(typeof saved.context==='number'&&typeof saved.model_limit==='number'&&typeof saved.output_reserve==='number'&&typeof saved.threads==='number'&&typeof saved.freetoken_memory_ratio==='number'&&typeof saved.kv_cache_dtype==='string'&&typeof saved.kv_tokens==='number'&&typeof saved.expert_slots==='number'&&typeof saved.ubatch==='number'){
         settings={context:saved.context,modelLimit:saved.model_limit,output:saved.output_reserve,threads:saved.threads,ratio:saved.freetoken_memory_ratio,dtype:saved.kv_cache_dtype,kvTokens:saved.kv_tokens,expertSlots:saved.expert_slots,prefill:saved.ubatch,
           moeStrategy:saved.moe_strategy??'auto',minVram:saved.freetoken_min_vram_gib??4,
           vramHeadroom:saved.vram_headroom_gib??1,ramHeadroom:saved.ram_headroom_gib??2,
           hostWeights:saved.host_weights_gib??null,ssdExpertOffload:saved.ssd_expert_offload===true,
           ssdKvCheckpoint:saved.ssd_kv_checkpoint===true,experimentalSsd:saved.experimental_ssd===true,
-          ssdExpertStagingMib:saved.ssd_expert_staging_mib??4,ssdKvLimitMib:saved.ssd_kv_limit_mib??256}
+          ssdExpertStagingMib:saved.ssd_expert_staging_mib??4,ssdKvLimitMib:saved.ssd_kv_limit_mib??256,
+          activeKv:saved.ssd_active_kv===true,activeKvRam:saved.ssd_active_kv_ram_mib??256,
+          activeKvGpu:saved.ssd_active_kv_gpu_tokens??1024,activeKvDisk:saved.ssd_active_kv_disk_mib??4096}
       }
     } catch(error) {
       if(!(error instanceof Error&&'code' in error&&error.code==='ENOENT'))detail='Saved inference settings could not be read'
@@ -58,7 +63,8 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     if(!/^[0-9a-f]{64}$/.test(saved))throw new Error('Invalid local gateway key file')
     return saved
   }
-  const status=()=>({phase,detail,settings,activeSettings,model:model===null?null:basename(model),engine:engine===null?null:basename(engine)})
+  const status=()=>({phase,detail,settings,activeSettings,bundled:app.isPackaged,ssdDirectory,
+    model:model===null?null:basename(model),engine:app.isPackaged?'FreeToken':engine===null?null:basename(engine)})
   const ensureIdle=()=>{if(operation||child||['starting','ready','stopping'].includes(phase))throw new Error('Engine is busy')}
   ipcMain.handle(PREFIX+'status',async event=>{owner(event);await restored;return status()})
   ipcMain.handle(PREFIX+'open-data',async event=>{
@@ -66,9 +72,20 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     const error=await shell.openPath(dirname(app.getPath('userData')))
     if(error)throw new Error(error)
   })
+  ipcMain.handle(PREFIX+'pick-ssd',async event=>{
+    const window=owner(event);await restored
+    if(operation||phase==='starting'||phase==='stopping')throw new Error('Engine is busy')
+    operation=true
+    try{
+      const selected=await dialog.showOpenDialog(window,{properties:['openDirectory'],title:'Choose a folder on your SSD'})
+      if(!selected.canceled&&selected.filePaths.length===1)ssdDirectory=resolve(selected.filePaths[0]!)
+      return status()
+    }finally{operation=false}
+  })
   ipcMain.handle(PREFIX+'pick',async(event,kind:unknown)=>{
     const window=owner(event);await restored;ensureIdle()
     if(kind!=='model'&&kind!=='engine')throw new Error('Invalid file kind')
+    if(app.isPackaged&&kind==='engine')throw new Error('FarStack uses the bundled engine')
     operation=true
     try{
       const selected=await dialog.showOpenDialog(window,{properties:['openFile'],title:kind==='model'?'Select local MoE GGUF':'Select a trusted FreeToken executable',...(kind==='model'?{filters:[{name:'GGUF',extensions:['gguf']}]}:{})})
@@ -101,21 +118,29 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
     if(experimentalSsd&&ssdKvCheckpoint&&s.dtype!=='auto')throw new Error('SSD KV checkpoint requires Auto KV precision')
     const ssdExpertStagingMib=integer(s.ssdExpertStagingMib??4,4,32)
     const ssdKvLimitMib=integer(s.ssdKvLimitMib??256,16,1024)
+    const activeKv=s.activeKv===undefined?false:s.activeKv
+    if(typeof activeKv!=='boolean'||(experimentalSsd&&activeKv&&(!app.isPackaged||s.dtype!=='auto'||ssdKvCheckpoint)))
+      throw new Error('Active SSD KV requires the bundled engine, Auto KV precision and disabled KV checkpoints')
+    const activeKvRam=integer(s.activeKvRam??256,0,8192)
+    const activeKvGpu=integer(s.activeKvGpu??1024,0,65536)
+    const activeKvDisk=integer(s.activeKvDisk??4096,64,65536)
     const minVram=positive(s.minVram,4,'minimum free VRAM')
     const vramHeadroom=positive(s.vramHeadroom,1,'VRAM headroom')
     const ramHeadroom=positive(s.ramHeadroom,2,'RAM headroom')
     const hostWeights=s.hostWeights==null?null:positive(s.hostWeights,0,'host weights estimate')
     return {
-      config:{freetoken_server:engine,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,
+      config:{freetoken_server:engine,bundled_engine:app.isPackaged,model,model_id:'local-longctx',model_is_moe:true,freetoken_model_verified:true,
         context:ctx,model_limit:limit,logical_target:1000000,output_reserve:out,threads,ubatch:prefill,
         kv_tokens:kvTokens,expert_slots:expertSlots,freetoken_memory_ratio:s.ratio,kv_cache_dtype:s.dtype,state_dir:stateDir,
         moe_strategy:moeStrategy,freetoken_min_vram_gib:minVram,vram_headroom_gib:vramHeadroom,
         ram_headroom_gib:ramHeadroom,host_weights_gib:hostWeights,ssd_expert_offload:ssdExpertOffload,
         experimental_ssd:experimentalSsd,ssd_kv_checkpoint:ssdKvCheckpoint,
-        ssd_expert_staging_mib:ssdExpertStagingMib,ssd_kv_limit_mib:ssdKvLimitMib},
+        ssd_expert_staging_mib:ssdExpertStagingMib,ssd_kv_limit_mib:ssdKvLimitMib,
+        ssd_active_kv:activeKv,ssd_active_kv_dir:ssdDirectory,ssd_active_kv_ram_mib:activeKvRam,
+        ssd_active_kv_gpu_tokens:activeKvGpu,ssd_active_kv_disk_mib:activeKvDisk},
       settings:{context:ctx,modelLimit:limit,output:out,threads,ratio:s.ratio,dtype:s.dtype,kvTokens,expertSlots,prefill,
         moeStrategy,minVram,vramHeadroom,ramHeadroom,hostWeights,experimentalSsd,
-        ssdExpertOffload,ssdKvCheckpoint,ssdExpertStagingMib,ssdKvLimitMib},
+        ssdExpertOffload,ssdKvCheckpoint,ssdExpertStagingMib,ssdKvLimitMib,activeKv,activeKvRam,activeKvGpu,activeKvDisk},
     }
   }
   const writeConfig=async (draft:ReturnType<typeof startupDraft>)=>{
@@ -136,20 +161,24 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
   })
   ipcMain.handle(PREFIX+'start',async(event,raw:unknown)=>{
     const window=owner(event);await restored;ensureIdle()
-    if(app.isPackaged||!root||!python)throw new Error('Local-Longctx development runtime is not configured')
+    if(!root||!python||(app.isPackaged&&!await stat(python).then(info=>info.isFile(),()=>false)))
+      throw new Error('FarStack runtime is missing from this installation')
     const draft=startupDraft(raw)
     const {context:ctx,output:out}=draft.settings
     operation=true
     try{
-      const approved=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Start trusted local engine'],defaultId:0,cancelId:0,message:'Start selected executable?',detail:draft.config.freetoken_server+'\n'+draft.config.model})
-      if(approved.response!==1)return status()
+      if(!app.isPackaged){
+        const approved=await dialog.showMessageBox(window,{type:'question',buttons:['Cancel','Start trusted local engine'],defaultId:0,cancelId:0,message:'Start selected executable?',detail:draft.config.freetoken_server+'\n'+draft.config.model})
+        if(approved.response!==1)return status()
+      }
       await mkdir(stateDir,{recursive:true,mode:0o700})
       const nextKey=await profileKey()
       await writeConfig(draft)
       key=nextKey;context=ctx;output=out
       activeSettings=draft.settings
       phase='starting';detail=''
-      const proc=spawn(python,['-m','longctx.desktop_worker',config],{cwd:root,shell:false,windowsHide:true,env:{...process.env,LOCAL_LONGCTX_API_KEY:key},stdio:['pipe','ignore','ignore']})
+      const workerArgs=[...(app.isPackaged?['-I']:[]),'-m','longctx.desktop_worker',config]
+      const proc=spawn(python,workerArgs,{cwd:root,shell:false,windowsHide:true,env:{...process.env,LOCAL_LONGCTX_API_KEY:key},stdio:['pipe','ignore','ignore']})
       child=proc
       proc.stdin?.on('error',()=>{})
       proc.once('error',()=>{if(child===proc){child=undefined;key='';activeSettings=undefined;phase='error';detail='Worker failed to start'}})
@@ -167,7 +196,15 @@ export function installLocalLongctx(owner:(event:IpcMainInvokeEvent)=>BrowserWin
             const response=await fetch('http://127.0.0.1:18080/local/desktop/capabilities',{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(2000),redirect:'error'})
             if(response.ok){
               const data=await response.json() as {worker_pid?:number;context?:{configured_native_window?:number;output_reserve?:number}}
-              if(child===proc&&phase==='starting'&&proc.pid!==undefined&&data.worker_pid===proc.pid&&data.context?.configured_native_window===ctx&&data.context.output_reserve===out){phase='ready';return}
+              const nativeWindow=data.context?.configured_native_window
+              const reserve=data.context?.output_reserve
+              if(child===proc&&phase==='starting'&&proc.pid!==undefined&&data.worker_pid===proc.pid
+                &&typeof nativeWindow==='number'&&typeof reserve==='number'&&
+                (app.isPackaged?nativeWindow<=ctx&&reserve<=out:nativeWindow===ctx&&reserve===out)){
+                context=nativeWindow;output=reserve
+                activeSettings={...draft.settings,context,output}
+                phase='ready';return
+              }
             }
           }catch{ /* Startup polling only. */ }
           await new Promise(r=>setTimeout(r,1000))

@@ -71,6 +71,7 @@ it('waits for the spawned worker rather than accepting a matching previous gatew
   await expect(call('save-startup', { ...settings, moeStrategy: 'offload', ssdExpertOffload: 'true' })).rejects.toThrow('Invalid SSD expert offload setting')
   await expect(call('save-startup', { ...settings, dtype: 'fp8_per_token_head', experimentalSsd: true, ssdKvCheckpoint: true })).rejects.toThrow('requires Auto KV precision')
   await expect(call('save-startup', { ...settings, experimentalSsd: true, ssdKvLimitMib: 1025 })).rejects.toThrow('Invalid integer setting')
+  await expect(call('save-startup', { ...settings, experimentalSsd: true, activeKv: true })).rejects.toThrow('requires the bundled engine')
   await expect(call('save-startup', { ...settings, ramHeadroom: 0 })).rejects.toThrow('Invalid RAM headroom')
   await call('save-startup', { ...settings, context: 4096, moeStrategy: 'offload', experimentalSsd: true,
     ssdExpertOffload: true, ssdKvCheckpoint: true, ssdExpertStagingMib: 8, ssdKvLimitMib: 512, hostWeights: 20, ramHeadroom: 3 })
@@ -92,10 +93,12 @@ it('waits for the spawned worker rather than accepting a matching previous gatew
   expect(await call('status')).toMatchObject({ phase: 'error', detail: expect.stringContaining('Worker exited') })
   installLocalLongctx(() => ({} as BrowserWindow))
   expect(await call('status')).toMatchObject({ phase: 'idle', settings: { ssdExpertOffload: true, ssdKvCheckpoint: true } })
+  stubs.pick.mockResolvedValueOnce({ canceled: false, filePaths: [directory] })
+  expect(await call('pick-ssd')).toMatchObject({ ssdDirectory: directory })
   await call('save-startup', { ...settings, experimentalSsd: false, ssdExpertOffload: true,
     ssdKvCheckpoint: true, ssdExpertStagingMib: 8, ssdKvLimitMib: 512 })
   expect(JSON.parse(await readFile(join(directory, 'local-longctx', 'config.json'), 'utf8'))).toMatchObject({
     experimental_ssd: false, ssd_expert_offload: true, ssd_kv_checkpoint: true,
-    ssd_expert_staging_mib: 8, ssd_kv_limit_mib: 512,
+    ssd_expert_staging_mib: 8, ssd_kv_limit_mib: 512, ssd_active_kv_dir: directory,
   })
 })

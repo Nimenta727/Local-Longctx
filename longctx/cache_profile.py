@@ -22,6 +22,9 @@ def profile_path(backend, config):
         profile.append(config.moe_strategy)
     if config.ssd_experts_enabled:
         profile.append("ssd_expert_offload")
+    if getattr(config,"ssd_active_kv_enabled",False):
+        profile.extend(("ssd_active_kv",config.ssd_active_kv_gpu_tokens,
+                        config.ssd_active_kv_ram_mib,config.ssd_active_kv_disk_mib))
     name = hashlib.sha256(json.dumps(profile).encode()).hexdigest()
     return config.state_dir / ("cache-" + name + ".json")
 

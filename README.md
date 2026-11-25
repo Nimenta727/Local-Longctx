@@ -1,4 +1,6 @@
-# Local-Longctx Studio
+# 远栈 FarStack
+
+当前开发分支正在集成 Windows 原生引擎、会话预算与活动 SSD KV。以下 alpha.5 链接仍指向旧版源码预发行。 [远栈构建与验收](docs/farstack.md)
 
 **v0.3.0-alpha.5 · 源码预发行 / Source prerelease · Apache-2.0**
 

@@ -15,6 +15,28 @@ from .native_messages import prepare_native, validate_prompt, count_native
 from .harness_ace import assess
 
 MAX_BODY = 32 * 1024 * 1024
+MAX_SSE_LINE = 1024 * 1024
+
+
+def read_sse_line(response):
+    line=response.readline(MAX_SSE_LINE)
+    if len(line)==MAX_SSE_LINE and not line.endswith(b"\n"):
+        raise BackendError("SSE line exceeds limit")
+    return line
+
+
+def buffer_initial_sse(response):
+    """Keep start frames private until generation reaches its first content event."""
+    pending=bytearray()
+    while len(pending)<MAX_SSE_LINE:
+        line=read_sse_line(response)
+        if not line or line.strip()==b"event: error":
+            raise BackendError("engine stream ended before producing content")
+        pending.extend(line)
+        if line.strip() in (b"event: content_block_start",b"event: content_block_delta",
+                            b"event: message_delta",b"event: message_stop"):
+            return pending
+    raise BackendError("engine stream startup exceeded its buffer")
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
@@ -27,6 +49,13 @@ class Server(ThreadingHTTPServer):
         self.cache_profile = "default"
         self.desktop_worker_pid = None
         super().__init__(("127.0.0.1", config.api_port), Handler)
+
+    def recover_tiered_kv(self):
+        if self.backend.recover_tiered_kv():
+            self.config=self.backend.config
+            self.cache_profile="default"
+            return True
+        return False
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "Local-Longctx/" + __version__
@@ -92,7 +121,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/local/cache/status":
             from .cache_control import snapshot
             try:
-                self.reply(200,dict(snapshot(self.server.backend,c), profile=self.server.cache_profile))
+                self.reply(200,dict(snapshot(self.server.backend,c), profile=self.server.cache_profile,
+                                    recovered_to_gpu=getattr(self.server.backend,"kv_recovered",False)))
             except (OSError,ValueError,KeyError,TypeError,BackendError,http.client.HTTPException):
                 self.error_json(503,"native cache telemetry unavailable")
         elif self.path == "/local/plan":
@@ -101,6 +131,28 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.error_json(404, "unknown endpoint")
 
+    def desktop_prompt(self, body, session):
+        from .desktop_history import SESSION_ID, DesktopHistory, fit_desktop_prompt
+        from .planner import Plan
+
+        if not SESSION_ID.fullmatch(session):
+            raise RequestError("invalid desktop session identifier")
+        c = self.server.config
+        prompt = validate_prompt(body,c)
+        output = body.get("max_tokens")
+        if type(output) is not int or not 1 <= output <= c.output_reserve:
+            raise RequestError("requested output exceeds configured reserve")
+        if type(body.get("stream",False)) is not bool:
+            raise RequestError("stream must be boolean")
+        history=DesktopHistory(c.state_dir)
+        history.remember(session,prompt["messages"])
+        window=self.server.backend.budget_window()
+        output=min(output,window-257)
+        if output<=0:
+            raise RequestError("available KV cannot hold a minimal request; original input saved")
+        messages, count = fit_desktop_prompt(prompt, output, window, self.server.backend, history, session)
+        return Plan(count,output,window,"farstack-desktop"), {**body,"messages":messages,"max_tokens":output}
+
     def do_POST(self):
         if not self.authorized():
             return
@@ -108,10 +160,11 @@ class Handler(BaseHTTPRequestHandler):
                                 "/local/session/append","/local/session/rollback","/local/session/compact",
                                 "/local/session/recall")
         settings_preview = self.path == "/local/desktop/settings/preview"
+        history_read = self.path == "/local/desktop/history/read"
         native = self.path in ("/v1/messages","/v1/messages/count_tokens")
         ace_plan = self.path == "/local/ace/harness-plan"
         cache_apply = self.path == "/local/cache/apply"
-        if self.path != "/v1/chat/completions" and not managed and not settings_preview and not native and not ace_plan and not cache_apply:
+        if self.path != "/v1/chat/completions" and not (managed or settings_preview or native or ace_plan or cache_apply or history_read):
             self.error_json(404, "unknown endpoint")
             return
         if self.headers.get("Transfer-Encoding"):
@@ -140,6 +193,19 @@ class Handler(BaseHTTPRequestHandler):
         start = time.monotonic()
         plan = None
         try:
+            if history_read:
+                from .desktop_history import SESSION_ID, DesktopHistory
+
+                if (not isinstance(body,dict) or set(body)!={"session","source"}
+                        or not isinstance(body["session"],str) or not SESSION_ID.fullmatch(body["session"])
+                        or type(body["source"]) is not int or not 1 <= body["source"] < 2**63):
+                    raise RequestError("invalid desktop source reference")
+                original=DesktopHistory(self.server.config.state_dir).read(body["session"],body["source"])
+                if original is None:
+                    self.error_json(404,"desktop history source not found")
+                else:
+                    self.reply(200,{"source":body["source"],"message":original})
+                return
             if cache_apply:
                 from .cache_control import rebuild
                 from .cache_profile import save
@@ -169,24 +235,38 @@ class Handler(BaseHTTPRequestHandler):
                 payload=dispatch(self.server.sessions,self.server.backend,self.server.config,self.path,body)
                 self.reply(200,payload)
                 return
-            if native:
-                plan,outbound = prepare_native(body,self.server.config,self.server.backend)
-            else:
-                plan,outbound = prepare(body,self.server.config,self.server.backend)
-            conn, res = self.server.backend.request("/v1/messages" if native else "/v1/chat/completions", outbound)
-            if res.status != 200:
-                self.error_json(502, "inference rejected by backend (HTTP %d)" % res.status)
-                return
-            streaming = outbound.get("stream", False)
-            kind = res.getheader("Content-Type", "")
-            if streaming and "text/event-stream" not in kind:
-                self.error_json(502, "backend did not return SSE")
-                return
+            session = self.headers.get("X-FarStack-Session") if native else None
+            for attempt in range(2):
+                try:
+                    if session is not None:
+                        plan,outbound = self.desktop_prompt(body,session)
+                    elif native:
+                        plan,outbound = prepare_native(body,self.server.config,self.server.backend)
+                    else:
+                        plan,outbound = prepare(body,self.server.config,self.server.backend)
+                    conn, res = self.server.backend.request("/v1/messages" if native else "/v1/chat/completions", outbound)
+                    if res.status != 200:
+                        raise BackendError("inference rejected by backend (HTTP %d)" % res.status)
+                    streaming = outbound.get("stream", False)
+                    if streaming and "text/event-stream" not in res.getheader("Content-Type", ""):
+                        raise BackendError("backend did not return SSE")
+                    prelude = (buffer_initial_sse(res) if streaming and session is not None
+                               and self.server.config.ssd_active_kv_enabled else b"")
+                    if not streaming:
+                        raw = res.read(64 * 1024 * 1024 + 1)
+                        if len(raw) > 64 * 1024 * 1024:
+                            raise BackendError("response too large")
+                        payload = parse_backend_object(raw)
+                    break
+                except (OSError,http.client.HTTPException,BackendError):
+                    if conn is not None:
+                        conn.close()
+                        conn=None
+                    if attempt or session is None or not self.server.recover_tiered_kv():
+                        raise
+                    # The client has received no output. Re-plan against the restarted GPU budget.
+                    body={**body,"max_tokens":min(body["max_tokens"],self.server.config.output_reserve)}
             if not streaming:
-                raw = res.read(64 * 1024 * 1024 + 1)
-                if len(raw) > 64 * 1024 * 1024:
-                    raise BackendError("response too large")
-                payload = parse_backend_object(raw)
                 self.reply(200, payload)
                 return
             self.send_response(200)
@@ -196,13 +276,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             started = True
             self.close_connection = True
+            if prelude:
+                self.wfile.write(prelude)
+                self.wfile.flush()
             # http.client decodes upstream chunk framing; preserve SSE lines.
             while True:
-                line = res.readline(1024 * 1024)
+                line = read_sse_line(res)
                 if not line:
                     break
-                if len(line) == 1024 * 1024 and not line.endswith(b"\n"):
-                    raise BackendError("SSE line exceeds limit")
                 self.wfile.write(line)
                 self.wfile.flush()
         except Conflict as exc:

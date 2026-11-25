@@ -2,10 +2,16 @@
 import http.client
 import subprocess
 import time
+from uuid import uuid4
+from dataclasses import replace
 from .backend import Backend,BackendError,clean_env,require_free
 
+def launcher(c):
+    return [str(c.freetoken_server), * (("-I", "-m", "freetoken.cli") if c.bundled_engine else ())]
+
+
 def command(c,d):
-    args = [str(c.freetoken_server),"serve","--model",str(c.model),
+    args = [*launcher(c),"serve","--model",str(c.model),
             "--served-model-name",c.model_id,"--host","127.0.0.1",
             "--port",str(c.backend_port),"--gpu",d.gpu_uuid,
             "--max-running-requests","1","--max-output-tokens",str(c.output_reserve),
@@ -24,20 +30,69 @@ def command(c,d):
     if c.ssd_kv_enabled:
         args += ["--experimental-ssd-kv",str((c.state_dir / "runtime-cache" / "ssd-kv.bin").resolve()),
                  "--experimental-ssd-kv-limit-mib",str(c.ssd_kv_limit_mib)]
+    if c.ssd_active_kv_enabled:
+        directory=c.ssd_active_kv_dir or (c.state_dir / "runtime-cache" / "active-kv")
+        args += ["--farstack-kv-dir",str(directory.resolve()),
+                 "--farstack-kv-gpu-tokens",str(c.ssd_active_kv_gpu_tokens),
+                 "--farstack-kv-ram-mib",str(c.ssd_active_kv_ram_mib),
+                 "--farstack-kv-disk-mib",str(c.ssd_active_kv_disk_mib),"--attention-backend","triton"]
+        if not c.ssd_experts_enabled:
+            args += ["--cuda-graph-max-bs","0"]
     return args
 
 class FreeTokenBackend(Backend):
     def __init__(self,c,decision):
         super().__init__(c)
         self.decision=decision
+        self.kv_fault_marker=None
+        self.kv_recovered=False
+        self.stop_event=None
+
+    def recover_tiered_kv(self):
+        marker=self.kv_fault_marker
+        if not self.config.ssd_active_kv_enabled or marker is None:
+            return False
+        if self.stop_event is not None and self.stop_event.is_set():
+            return False
+        try:
+            with marker.open("rb") as signal:
+                if signal.read(1)!=b"1":
+                    return False
+        except FileNotFoundError:
+            return False
+        self.close()
+        marker.unlink(missing_ok=True)
+        c=self.config
+        # Drop the enlarged SSD pool override and let the engine size its GPU pool.
+        self.config=replace(c,ssd_active_kv=False,kv_tokens=0).validate()
+        self.start(stop_event=self.stop_event)
+        self.kv_recovered=True
+        return True
+
+    def budget_window(self):
+        raw=self.json("/v1/cache/status",timeout=5)
+        data=raw.get("geometry",{})
+        pages, step=data.get("num_pages"), data.get("page_size")
+        if raw.get("state")!="serving" or type(pages) is not int or type(step) is not int or min(pages,step)<=0:
+            raise BackendError("could not confirm current KV capacity")
+        return min(self.config.context,pages*step)
 
     def start(self, stop_event=None):
+        self.stop_event=stop_event
         c=self.config
         require_free(c.backend_port)
         c.state_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
         env={k:v for k,v in clean_env().items() if not k.startswith("FREETOKEN_")}
         cache = (c.state_dir / "runtime-cache").resolve()
         cache.mkdir(exist_ok=True, mode=0o700)
+        env.pop("FARSTACK_KV_FAULT_FILE",None)
+        self.kv_fault_marker=None
+        if c.ssd_active_kv_enabled:
+            self.kv_fault_marker=cache / ("active-kv-fault-"+uuid4().hex)
+            with self.kv_fault_marker.open("xb") as marker:
+                marker.write(b"0")
+                marker.flush()
+            env["FARSTACK_KV_FAULT_FILE"]=str(self.kv_fault_marker)
         env.update({"FREETOKEN_API_KEY":self.key,"HF_HUB_OFFLINE":"1","TRANSFORMERS_OFFLINE":"1",
                     "XDG_CACHE_HOME":str(cache),"CUDA_CACHE_PATH":str(cache / "cuda"),
                     "HF_HOME":str(cache / "huggingface"),"TORCH_HOME":str(cache / "torch")})
@@ -65,9 +120,14 @@ class FreeTokenBackend(Backend):
                     time.sleep(0.5)
                     continue
                 lengths=[entries[0][k] for k in ("max_model_len","context_length") if k in entries[0]]
-                if not lengths or any(type(n) is not int or n!=c.context for n in lengths):
+                minimum = 1024 if c.bundled_engine else c.context
+                if not lengths or any(type(n) is not int or not minimum<=n<=c.context for n in lengths) or len(set(lengths))!=1:
                     raise BackendError("FreeToken did not confirm requested context length")
                 self.count_prompt([{"role":"user","content":"ping"}])
+                if lengths[0]!=c.context:
+                    actual=lengths[0]
+                    self.config=replace(c,context=actual,output_reserve=min(c.output_reserve,actual-257),
+                                        ubatch=min(c.ubatch,actual)).validate()
                 return
             raise BackendError("FreeToken startup timed out")
         except BaseException:

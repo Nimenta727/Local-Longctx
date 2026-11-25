@@ -43,6 +43,16 @@ class Config:
     ssd_kv_checkpoint: bool=False
     ssd_expert_staging_mib: int=4
     ssd_kv_limit_mib: int=256
+    bundled_engine: bool=False
+    ssd_active_kv: bool=False
+    ssd_active_kv_ram_mib: int=256
+    ssd_active_kv_gpu_tokens: int=1024
+    ssd_active_kv_disk_mib: int=4096
+    ssd_active_kv_dir: Path | None=None
+
+    @property
+    def ssd_active_kv_enabled(self):
+        return self.experimental_ssd and self.ssd_active_kv
 
     @property
     def ssd_experts_enabled(self):
@@ -60,7 +70,8 @@ class Config:
         for k in ("context","model_limit","logical_target","output_reserve","ubatch",
                   "threads","api_port","backend_port","gateway_port","timeout",
                   "attention_layers","kv_heads","head_dim","kv_tokens","expert_slots",
-                  "ssd_expert_staging_mib","ssd_kv_limit_mib"):
+                  "ssd_expert_staging_mib","ssd_kv_limit_mib","ssd_active_kv_ram_mib",
+                  "ssd_active_kv_gpu_tokens","ssd_active_kv_disk_mib"):
             if type(getattr(self,k)) is not int:
                 raise ValueError(k+" must be an integer")
         if not 0<=self.kv_tokens<=2097152 or not 0<=self.expert_slots<=1000000:
@@ -82,7 +93,7 @@ class Config:
             raise ValueError("unsupported MoE strategy")
         if self.kv_cache_dtype not in ("auto","fp8_per_token_head","int8_per_token_head"):
             raise ValueError("unsupported native KV dtype")
-        for k in ("model_is_moe","freetoken_model_verified","experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint"):
+        for k in ("model_is_moe","freetoken_model_verified","experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint","bundled_engine","ssd_active_kv"):
             if type(getattr(self,k)) is not bool:
                 raise ValueError(k+" must be a boolean")
         if not 4<=self.ssd_expert_staging_mib<=32 or not 16<=self.ssd_kv_limit_mib<=1024:
@@ -91,6 +102,13 @@ class Config:
             raise ValueError("SSD expert offload requires MoE strategy offload")
         if self.ssd_kv_enabled and self.kv_cache_dtype!="auto":
             raise ValueError("SSD KV checkpoint requires Auto KV precision")
+        if not (0 <= self.ssd_active_kv_ram_mib <= 8192 and 0 <= self.ssd_active_kv_gpu_tokens <= 65536
+                and 64 <= self.ssd_active_kv_disk_mib <= 65536):
+            raise ValueError("invalid active KV budget")
+        if self.ssd_active_kv_enabled and (not self.bundled_engine or self.kv_cache_dtype!="auto" or self.ssd_kv_enabled):
+            raise ValueError("Active SSD KV requires bundled engine, Auto KV precision, and disabled prefix checkpoints")
+        if self.ssd_active_kv_enabled and self.ssd_active_kv_dir is not None and not self.ssd_active_kv_dir.is_dir():
+            raise ValueError("Active SSD KV directory does not exist")
         for k in ("freetoken_min_vram_gib","freetoken_memory_ratio","ram_headroom_gib","vram_headroom_gib","host_weights_gib"):
             v=getattr(self,k)
             if k=="host_weights_gib" and v is None:
@@ -112,8 +130,8 @@ class Config:
         data=json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data,dict):
             raise ValueError("configuration must be an object")
-        for k in ("freetoken_server","model","state_dir"):
-            if k in data:
+        for k in ("freetoken_server","model","state_dir","ssd_active_kv_dir"):
+            if data.get(k) is not None:
                 data[k]=(path.parent/data[k]).resolve()
         data.setdefault("state_dir",path.parent/".local-longctx")
         return cls(**data).validate()

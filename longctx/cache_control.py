@@ -39,6 +39,12 @@ def snapshot(backend,c,probe=detect):
     raw=backend.json("/v1/cache/status",timeout=5)
     stats=backend.json("/v1/stats",timeout=5)
     g=geometry(raw)
+    if getattr(c,"ssd_active_kv_enabled",False):
+        for pool in g["pools"].values():
+            pool["adjustable"]=False
+        kv=g["pools"]["kv_tokens"]
+        kv["resident_bytes"]=min(kv["value"]+kv["step"],c.ssd_active_kv_gpu_tokens)*kv["unit_bytes"]
+        g["reload_to_resize"]=True
     hw=probe(c.state_dir)
     gpu=next((x for x in hw.nvidia if x.uuid==backend.decision.gpu_uuid),None)
     return dict(g,native_window=c.context,output_reserve=c.output_reserve,

@@ -25,7 +25,8 @@ def modify(root,path,edits):
     file.write_text(text,encoding="utf-8")
 
 def apply(root):
-    for name,dest in (("LocalLongctxPanel.tsx",CARD),("LocalCachePanel.tsx",CARD),("local-longctx-ipc.ts","apps/desktop/src/"),("local-memory.ts",COMPACTION+"src/"),
+    for name,dest in (("LocalLongctxPanel.tsx",CARD),("LocalCachePanel.tsx",CARD),("LocalCachePanel.module.css",CARD),
+                      ("local-longctx-ipc.ts","apps/desktop/src/"),("local-memory.ts",COMPACTION+"src/"),
                       ("local-archive.ts",COMPACTION+"src/"),("local-task-state.ts",COMPACTION+"src/"),
                       ("local-tool-evidence.ts","packages/spill/spill-policy/src/")):
         target=root/dest/name
@@ -126,7 +127,32 @@ export function conceptMatches(text: string, requested?: ReadonlyMap<string, num
 describe('disabled mode', () => {""")])
     modify(root,CARD+"ModelsSection.tsx",[
         ("import { useId, useState } from 'react'","import { useId, useState } from 'react'\nimport { LocalLongctxPanel } from './LocalLongctxPanel.tsx'"),
-        ("return (\n    <div className={styles['section']}>","return (\n    <div className={styles['section']}>\n      <LocalLongctxPanel />")])
+        ("""  const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
+    ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }""",
+         """  const state = { ...snapshot, rows: snapshot.rows.filter(row => row.entry.provider !== 'deepseek-account') }"""),
+        ("return (\n    <div className={styles['section']}>","""return (
+    <div className={styles['section']}>
+      <LocalLongctxPanel {...piAi === undefined ? {} : { registerModel: async connection => {
+        const route = 'local-longctx'
+        const path = ['providers', route]
+        const declaredURL = schema.getPath(piAi.value, [...path, 'baseURL'])
+        if (declaredURL !== undefined && declaredURL !== connection.baseURL) throw new Error('FarStack route is already in use')
+        const keyRef = deriveKeyRef(route)
+        const declaredKey = schema.getPath(piAi.value, [...path, 'apiKeyEnv'])
+        if (declaredKey !== undefined && declaredKey !== keyRef) throw new Error('FarStack route uses another credential')
+        const savedKey = await operations.storeCredential(keyRef, connection.key)
+        if (savedKey !== undefined) throw new Error('Could not store local engine key')
+        const profile = {
+          displayName: 'FarStack', apiKeyEnv: keyRef, api: 'anthropic-messages', baseURL: connection.baseURL,
+          models: [{ id: connection.model, name: 'FarStack', contextWindow: connection.context,
+            maxTokens: connection.output, input: ['text'] }],
+        }
+        const outcome = await operations.writeSettings('llm-pi-ai', declaredURL === undefined
+          ? [{ op: 'set', path, value: profile }]
+          : Object.entries(profile).map(([field, value]) => ({ op: 'set', path: [...path, field], value })), piAi.revision)
+        if (outcome.kind !== 'written') throw new Error('Could not register local model')
+        await controller.load()
+      } }} />""")])
     modify(root,CARD+"CustomProviderCard.tsx",[
         ("import { useEffect, useState } from 'react'","import { useEffect, useState } from 'react'\nimport { localLongctxBridge } from './LocalLongctxPanel.tsx'"),
         ("  return (\n    <div className={styles['editor']}>","""  const local = localLongctxBridge()
@@ -137,18 +163,24 @@ describe('disabled mode', () => {""")])
     try {
       const c = await local.connection()
       setRoute('local-longctx')
-      setDisplayName('Local-Longctx')
+      setDisplayName('FarStack')
       setBaseURL(c.baseURL)
       setProtocol('anthropic-messages')
       setKeyDraft(c.key)
-      setModels([{id:c.model,name:'Local-Longctx',contextWindow:c.context,maxTokens:c.output,input:['text']}])
+      setModels([{id:c.model,name:'FarStack',contextWindow:c.context,maxTokens:c.output,input:['text']}])
       setFailure(undefined)
     } catch (e) { setFailure(String(e)) }
     finally { setBusy(false) }
   }
   return (
     <div className={styles['editor']}>
-      {local ? <button type="button" disabled={profileDisabled || listBusy || taken.includes('local-longctx')} onClick={()=>{void useLocal()}}>Local-Longctx 本地模型预设 / Local model preset</button> : null}""")])
+      {local ? <button type="button" disabled={profileDisabled || listBusy || taken.includes('local-longctx')} onClick={()=>{void useLocal()}}>远栈本地模型 / FarStack local model</button> : null}""")])
+    modify(root,CARD+"index.ts",[
+        ("  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({\n    name: 'settings.onboarding',\n    id: 'deepseek-official',",
+         "  if (!('localLongctx' in globalThis)) ctx.slots.inject('settings.onboarding', () => ctx.slots.register({\n    name: 'settings.onboarding',\n    id: 'deepseek-official',")])
+    modify(root,"packages/client/ui-settings-account/src/client/index.ts",[
+        ("  if (desktop) {\n    const controller = new DesktopOnboardingController(",
+         "  if ('localLongctx' in globalThis) return\n  if (desktop) {\n    const controller = new DesktopOnboardingController(")])
     modify(root,"packages/compaction/compaction-basic/src/index.ts",[
         ("import { Context, Service } from '@deepseek-ai/cordis'","import { Context, Service } from '@deepseek-ai/cordis'\nimport { recallLocalMemory } from './local-memory.ts'"),
         ("      { agent, signal },\n      next,","      { agent, signal, modelSelection, promptPreview, step },\n      next,"),
@@ -281,6 +313,14 @@ describe('pressure measurement and retention', () => {""")])
     provider: target.provider, model: target.model, thresholdRatio: 0.8,
     headroomTokens: 384, maxTokens: 640, retainRatio: 0.22, maxOverflowRetries: 1,
   } satisfies ModelCompactPolicyConfig : undefined)""")])
+    modify(root,"packages/llm/llm-pi-ai/src/adapter.ts",[
+        ("    const headers = prepare === undefined ? initial : prepare(request, initial)",
+         """    const headers = prepare === undefined ? initial : prepare(request, initial)
+    headers.delete('X-FarStack-Session')
+    if (options.provider === 'local-longctx' && options.model === 'local-longctx'
+      && options.sessionId !== undefined && new URL(baseURL).origin === 'http://127.0.0.1:18080') {
+      headers.set('X-FarStack-Session', String(options.sessionId))
+    }""")])
     modify(root,"packages/bundle/web-app/cordis.patch.yml",[
         ("- id: system-prompt\n", """- id: session-log-deepseek
   config:
@@ -295,6 +335,12 @@ describe('pressure measurement and retention', () => {""")])
     modify(root,"apps/desktop/src/main.ts",[
         ("import { installFileActions } from './file-actions.ts'","import { installFileActions } from './file-actions.ts'\nimport { installLocalLongctx } from './local-longctx-ipc.ts'"),
         ("app.setAppLogsPath()", "app.setAppLogsPath(join(app.getPath('userData'), 'logs'))"),
+        ("applicationName: 'DeepSeek Harness'", "applicationName: 'FarStack'"),
+        ("analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)",
+         "analyticsEnabled = !app.isPackaged && await welcomeBackend.analyticsEnabled().catch(() => false)"),
+        ("if (!enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {",
+         "if (!app.isPackaged && !enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {"),
+        ("url === 'dsh://open' || url === 'dsh://open/'", "url === 'farstack://open' || url === 'farstack://open/'"),
         ("  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {","  installLocalLongctx(assertProductSender)\n  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {")])
     modify(root,"apps/desktop/src/preload-app.ts",[
         ("markDocumentPlatform()","""if (location.protocol === `${SCHEME}:` && location.hostname === 'app' && process.isMainFrame) {
@@ -303,6 +349,7 @@ describe('pressure measurement and retention', () => {""")])
     openData: () => ipcRenderer.invoke('local-longctx:open-data'),
     copyKey: () => ipcRenderer.invoke('local-longctx:copy-key'),
     pick: (kind: 'model' | 'engine') => ipcRenderer.invoke('local-longctx:pick', kind),
+    pickSsd: () => ipcRenderer.invoke('local-longctx:pick-ssd'),
     start: (settings: unknown) => ipcRenderer.invoke('local-longctx:start', settings),
     saveStartup: (settings: unknown) => ipcRenderer.invoke('local-longctx:save-startup', settings),
     stop: () => ipcRenderer.invoke('local-longctx:stop'),
@@ -313,12 +360,29 @@ describe('pressure measurement and retention', () => {""")])
 }
 markDocumentPlatform()""")])
     modify(root,"apps/desktop/scripts/electron-builder-config.mjs",[
-        ("productName: 'DeepSeek Harness'","productName: 'Local-Longctx Studio'"),
-        ("name: 'DeepSeek Harness', schemes: ['dsh']","name: 'Local-Longctx Studio', schemes: ['dsh']")])
-    # Original vector mark. Do not modify copyright, licenses, internal package identifiers,
-    # or provider names. Raster icons and all other brand surfaces require a release audit.
+        ("productName: 'DeepSeek Harness'","productName: 'FarStack'"),
+        ("name: 'DeepSeek Harness', schemes: ['dsh']","name: 'FarStack', schemes: ['farstack']"),
+        ("artifactName: `deepseek-harness-", "artifactName: `farstack-"),
+        ("  const appId = resolveDesktopAppId(env)","  const appId = resolveDesktopAppId({ ...env, DSH_DESKTOP_APP_ID: 'org.farstack.desktop' })"),
+        ("    extraResources: [","""    extraResources: [
+      ...(packagesWindows ? [{ from: env.FARSTACK_RUNTIME_DIR ?? (() => {
+        throw new Error('Build the bundled FarStack runtime and set FARSTACK_RUNTIME_DIR before packaging Windows')
+      })(), to: 'farstack-runtime' }] : []),""")])
+    modify(root,"apps/desktop/scripts/smoke-packaged-runtime.ts",[
+        ("import { join } from 'node:path'","import { join } from 'node:path'\nimport { execFileSync } from 'node:child_process'"),
+        ("'DeepSeek Harness.exe'", "'FarStack.exe'"),
+        ("if (windows && !values.unsigned) await verifyWindowsCode(application)", """if (windows && !values.unsigned) await verifyWindowsCode(application)
+if (windows) {
+  const python = join(resources, 'farstack-runtime', 'python.exe')
+  execFileSync(python, ['-I', '-c', "import torch; import longctx.desktop_worker; import freetoken.kernel._pinned_tensor; assert torch.version.cuda and torch.version.cuda.startswith('13.')"], { stdio: 'inherit' })
+  execFileSync(python, ['-I', '-m', 'freetoken.cli', 'serve', '--help'], { stdio: 'ignore' })
+}""")])
+    # Replace visible marks while preserving upstream copyright and licenses.
     for name in ("icon.svg","icon-macos.svg","icon-windows.svg"):
         shutil.copyfile(ROOT/"overlay"/"studio.svg",root/"apps/desktop/resources"/name)
+    for name in ("icon.png","icon-macos.png","icon-windows.png"):
+        shutil.copyfile(ROOT/"overlay"/"farstack.png",root/"apps/desktop/resources"/name)
+    shutil.copyfile(ROOT/"overlay"/"farstack.ico",root/"apps/desktop/resources/tray-windows.ico")
     (root/"LOCAL_LONGCTX_PREVIEW.txt").write_text("Independent development overlay; not a release. Preserve upstream MIT notices.\n",encoding="utf-8")
 
 def main():

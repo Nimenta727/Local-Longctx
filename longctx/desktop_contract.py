@@ -6,17 +6,18 @@ TARGET=1_000_000
 MODES=("exact","compressed","adaptive","virtual")
 SETTINGS=("context","output_reserve","ubatch","threads","freetoken_memory_ratio","kv_cache_dtype","kv_tokens","expert_slots",
           "freetoken_min_vram_gib","ram_headroom_gib","vram_headroom_gib","host_weights_gib","moe_strategy",
-          "experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint","ssd_expert_staging_mib","ssd_kv_limit_mib")
+          "experimental_ssd","ssd_expert_offload","ssd_kv_checkpoint","ssd_expert_staging_mib","ssd_kv_limit_mib",
+          "ssd_active_kv","ssd_active_kv_ram_mib","ssd_active_kv_gpu_tokens","ssd_active_kv_disk_mib")
 
 def describe(c):
     return {
         "contract_version":1,
-        "product":"Local-Longctx",
+        "product":"FarStack",
         "engine":"freetoken",
         "context":{"product_target":TARGET,"configured_native_window":c.context,
                    "declared_model_limit":c.model_limit,"output_reserve":c.output_reserve,
                    "native_million_verified":False,"unlimited_history_verified":False,
-                   "native_window_status":"configured; not independently benchmarked",
+                   "native_window_status":"engine-confirmed ceiling; admission also checks live KV capacity",
                    "current_mode":c.mode,"logical_target":c.logical_target},
         "capabilities":{
             "text_chat":{"status":"experimental"},
@@ -26,13 +27,13 @@ def describe(c):
             "web_search":{"status":"not_integrated","enabled":False},
             "workspace_edit":{"status":"not_integrated","enabled":False},
             "managed_compact":{"status":"explicit_preview_commit_rollback"},
-            "automatic_compact":{"status":"not_integrated"},
+            "automatic_compact":{"status":"desktop_budget_projection_experimental"},
             "settings_apply":{"status":"startup_and_native_idle_rebuild_experimental"}
         },
         "memory_controls":{
             "apply_while_idle":["kv_tokens","moe_experts","swa_tokens","mamba_slots"],
             "moe_strategies":list(MOE_STRATEGIES),
-            "ssd_kv_offload":False,
+            "ssd_kv_offload":c.ssd_active_kv_enabled,
             "experimental_ssd":c.experimental_ssd,
             "ssd_kv_checkpoint":c.ssd_kv_enabled,
             "ssd_expert_offload":c.ssd_experts_enabled,

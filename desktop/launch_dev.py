@@ -23,7 +23,7 @@ def data_root(upstream):
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    return (base / "Local-Longctx").resolve()
+    return (base / "FarStack").resolve()
 
 def main():
     upstream=ROOT/"upstream"
@@ -33,14 +33,14 @@ def main():
     if not pnpm:
         raise SystemExit("Install the upstream-required Node.js and pnpm versions")
     env={k:v for k,v in os.environ.items() if not k.startswith(("DSH_DESKTOP_AUTO_UPDATE","DSH_DESKTOP_MANDATORY_UPDATE","DOWNLOAD_"))}
-    env.update(LOCAL_LONGCTX_DEV_ROOT=str(ROOT.parent),LOCAL_LONGCTX_PYTHON=sys.executable,DSH_DESKTOP_APP_ID="org.locallongctx.studio")
+    env.update(LOCAL_LONGCTX_DEV_ROOT=str(ROOT.parent),LOCAL_LONGCTX_PYTHON=sys.executable,DSH_DESKTOP_APP_ID="org.farstack.desktop")
     state = data_root(upstream)
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     paths = {"DSH_HOME": state / "home", "DSH_DESKTOP_USER_DATA_DIR": state / "electron-user-data"}
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
     env.update({key: str(value) for key, value in paths.items()})
-    print("Local-Longctx data:", state, flush=True)
+    print("FarStack data:", state, flush=True)
     # Development only. Upstream dependencies must be installed and reviewed separately.
     return subprocess.call([pnpm,"run","dev:desktop"],cwd=upstream,env=env,shell=False)
 if __name__=="__main__":

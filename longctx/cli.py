@@ -17,7 +17,7 @@ from .compact import evaluate, Snapshot, Segment
 from .service import Server
 from .hardware import detect
 from .scheduler import choose, report
-from .freetoken import FreeTokenBackend, command as ft_command
+from .freetoken import FreeTokenBackend, command as ft_command, launcher
 
 def run(c):
     key = os.environ.get("LOCAL_LONGCTX_API_KEY") or secrets.token_urlsafe(32)
@@ -73,7 +73,7 @@ def main(argv=None):
             print(json.dumps(r,indent=2))
         elif a.action=="doctor":
             d=choose(c,detect(c.state_dir))
-            result=subprocess.run([str(c.freetoken_server),"serve","--help"],env=clean_env(),
+            result=subprocess.run([*launcher(c),"serve","--help"],env=clean_env(),
                                   stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=30,check=True)
             flags={x for x in ft_command(c,d)[2:] if x.startswith("--")}
             missing=sorted(x for x in flags if x not in result.stdout)
